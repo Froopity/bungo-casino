@@ -7,6 +7,7 @@ dependencies = [
   'discord.py==2.6.4',
   'python-dotenv==1.2.1',
   'pytz==2025.2',
+  "yoyo-migrations>=9.0.0",
 ]
 
 [project.optional-dependencies]
