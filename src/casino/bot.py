@@ -184,6 +184,55 @@ class ResolutionConfirmView(discord.ui.View):
     )
 
 
+class CancellationConfirmView(discord.ui.View):
+  def __init__(self, bet_id: int, canceller_discord_id: str):
+    super().__init__(timeout=60.0)
+    self.bet_id = bet_id
+    self.canceller_discord_id = canceller_discord_id
+
+  @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
+  async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    for item in self.children:
+      item.disabled = True
+
+    cur.execute(
+      '''UPDATE bet
+         SET state = 'cancelled'
+         WHERE id = ? AND state = 'active' ''',
+      (self.bet_id,)
+    )
+    con.commit()
+
+    if cur.rowcount == 0:
+      bet = cur.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
+      if bet and bet[0] != 'active':
+        await interaction.response.edit_message(
+          content="cmon champ, that wager's long gone by now",
+          view=self
+        )
+      else:
+        await interaction.response.edit_message(
+          content='somethin went wrong there pardner',
+          view=self
+        )
+      return
+
+    await interaction.response.edit_message(
+      content='ah well',
+      view=self
+    )
+
+  @discord.ui.button(label='nevrmind', style=discord.ButtonStyle.grey)
+  async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    for item in self.children:
+      item.disabled = True
+
+    await interaction.response.edit_message(
+      content='alright pardner, cancellation cancelled',
+      view=self
+    )
+
+
 async def parse_winner_for_bet(ctx, winner_arg, participant1_id, participant2_id, cur):
   winner_id = None
   winner_discord_id = None
@@ -318,6 +367,47 @@ async def resolve(ctx, bet_id: int, winner: str, *, notes: str = ''):
   )
 
   await ctx.channel.send(f'r ya sure {winner_name} wins?', view=view)
+
+
+@bot.command()
+async def cancel(ctx, bet_id: int):
+  if ctx.author == bot.user:
+    return
+
+  canceller = cur.execute(
+    'SELECT id FROM user WHERE discord_id = ?',
+    (str(ctx.author.id),)
+  ).fetchone()
+
+  if not canceller:
+    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
+    return
+
+  canceller_id = canceller[0]
+
+  bet = cur.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
+
+  if not bet:
+    await ctx.channel.send("i ain't know nothin bout that ticket numbr")
+    return
+
+  if bet[5] != 'active':
+    await ctx.channel.send("cmon champ, that wager's long gone by now")
+    return
+
+  participant1_id = bet[1]
+  participant2_id = bet[2]
+
+  if canceller_id not in (participant1_id, participant2_id):
+    await ctx.channel.send("slow down pardner, you ain't a part of that there wager")
+    return
+
+  view = CancellationConfirmView(
+    bet_id=bet_id,
+    canceller_discord_id=str(ctx.author.id)
+  )
+
+  await ctx.channel.send('r ya sure?', view=view)
 
 
 if __name__ == '__main__':
