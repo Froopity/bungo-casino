@@ -410,5 +410,62 @@ async def cancel(ctx, bet_id: int):
   await ctx.channel.send('r ya sure?', view=view)
 
 
+@bot.command(aliases=['leaderboard'])
+async def leadrbord(ctx):
+  if ctx.author == bot.user:
+    return
+
+  query = '''
+    WITH user_stats AS (
+      SELECT
+        u.id,
+        u.display_name,
+        SUM(CASE WHEN b.winner_id = u.id THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN b.winner_id = u.id THEN 1
+                 WHEN (b.participant1_id = u.id OR b.participant2_id = u.id)
+                      AND b.winner_id IS NOT NULL
+                      AND b.winner_id != u.id THEN -1
+                 ELSE 0 END) AS balance
+      FROM user u
+      LEFT JOIN bet b ON (b.participant1_id = u.id OR b.participant2_id = u.id)
+                      AND b.state = 'resolved'
+      GROUP BY u.id, u.display_name
+      HAVING COUNT(CASE WHEN b.state = 'resolved' THEN 1 END) > 0
+    )
+    SELECT display_name, balance, wins
+    FROM user_stats
+    ORDER BY balance DESC, wins DESC
+    LIMIT 10
+  '''
+
+  results = cur.execute(query).fetchall()
+
+  if not results:
+    await ctx.channel.send("ain't nobody played yet pardner")
+    return
+
+  lines = ['```', "big bungo's leadrbord", '━━━━━━━━━━━━━━━━━━━━━━━']
+
+  for idx, (name, balance, wins) in enumerate(results, 1):
+    display_name = name[:15] + '...' if len(name) > 15 else name
+
+    if balance >= 0:
+      balance_str = f'${balance}'
+    else:
+      balance_str = f'-${abs(balance)}'
+
+    rank_str = f'#{idx}'.ljust(4)
+    name_str = display_name.ljust(18)
+    balance_str = balance_str.rjust(6)
+    wins_str = f'({wins}W)'
+
+    lines.append(f'{rank_str}{name_str}{balance_str}  {wins_str}')
+
+  lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
+  lines.append('```')
+
+  await ctx.channel.send('\n'.join(lines))
+
+
 if __name__ == '__main__':
     bot.run(os.getenv('DISCORD_BOT_TOKEN'))
