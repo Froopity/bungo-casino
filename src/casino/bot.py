@@ -61,7 +61,7 @@ async def wager(ctx, opponent: str, *, description: str):
   creator_id, creator_name = creator
 
   if len(description) > 280:
-    await ctx.channel.send('hold on partner that description\'s too long, keep it under 280 characters')
+    await ctx.channel.send("hold on partner that description's too long, keep it under 280 characters")
     return
 
   if ctx.message.mentions:
@@ -77,7 +77,7 @@ async def wager(ctx, opponent: str, *, description: str):
     ).fetchone()
 
     if not opponent_user:
-      await ctx.channel.send(f'hold on hold on, {mentioned_user.display_name} has to say $howdy to ol\' bungo first')
+      await ctx.channel.send(f"hold on hold on, {mentioned_user.display_name} has to say $howdy to ol' bungo first")
       return
 
     opponent_id = opponent_user[0]
@@ -96,7 +96,7 @@ async def wager(ctx, opponent: str, *, description: str):
       guild_member = ctx.guild.get_member(int(opponent_user[1]))
 
       if not guild_member:
-        await ctx.channel.send(f'hold on hold on, {opponent} has to say $howdy to ol\' bungo first')
+        await ctx.channel.send(f"hold on hold on, {opponent} has to say $howdy to ol' bungo first")
         return
 
       opponent_id = opponent_user[0]
@@ -107,10 +107,10 @@ async def wager(ctx, opponent: str, *, description: str):
       ]
 
       if matching_members:
-        await ctx.channel.send(f'hold on hold on, {opponent} has to say $howdy to ol\' bungo first')
+        await ctx.channel.send(f"hold on hold on, {opponent} has to say $howdy to ol' bungo first")
         return
       else:
-        await ctx.channel.send(f'i ain\'t never heard o\' no {opponent}')
+        await ctx.channel.send(f"i ain't never heard o' no {opponent}")
         return
 
   cur.execute(
@@ -124,6 +124,200 @@ async def wager(ctx, opponent: str, *, description: str):
   bet_id = cur.lastrowid
 
   await ctx.channel.send(f'alrighty your ticket is {bet_id} good luck champ')
+
+
+class ResolutionConfirmView(discord.ui.View):
+  def __init__(self, bet_id: int, winner_id: str, winner_name: str, loser_name: str,
+               resolver_discord_id: str, resolution_notes: str = None):
+    super().__init__(timeout=60.0)
+    self.bet_id = bet_id
+    self.winner_id = winner_id
+    self.winner_name = winner_name
+    self.loser_name = loser_name
+    self.resolver_discord_id = resolver_discord_id
+    self.resolution_notes = resolution_notes
+
+  @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
+  async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    for item in self.children:
+      item.disabled = True
+
+    cur.execute(
+      '''UPDATE bet
+         SET state = 'resolved',
+             resolved_at = CURRENT_TIMESTAMP,
+             resolved_by_discord_id = ?,
+             winner_id = ?,
+             resolution_notes = ?
+         WHERE id = ? AND state = 'active' ''',
+      (self.resolver_discord_id, self.winner_id, self.resolution_notes, self.bet_id)
+    )
+    con.commit()
+
+    if cur.rowcount == 0:
+      bet = cur.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
+      if bet and bet[0] != 'active':
+        await interaction.response.edit_message(
+          content="cmon champ, that wager's long gone by now",
+          view=self
+        )
+      else:
+        await interaction.response.edit_message(
+          content='somethin went wrong there pardner',
+          view=self
+        )
+      return
+
+    await interaction.response.edit_message(
+      content=f'congrertulatiorns {self.winner_name}, betrr luck next time {self.loser_name}',
+      view=self
+    )
+
+  @discord.ui.button(label='nevrmind', style=discord.ButtonStyle.grey)
+  async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+    for item in self.children:
+      item.disabled = True
+
+    await interaction.response.edit_message(
+      content='alright pardner, resolution cancelled',
+      view=self
+    )
+
+
+async def parse_winner_for_bet(ctx, winner_arg, participant1_id, participant2_id, cur):
+  winner_id = None
+  winner_discord_id = None
+
+  if ctx.message.mentions:
+    mentioned_user = ctx.message.mentions[0]
+    winner_discord_id = str(mentioned_user.id)
+
+    winner_user = cur.execute(
+      'SELECT id FROM user WHERE discord_id = ?',
+      (winner_discord_id,)
+    ).fetchone()
+
+    if winner_user:
+      winner_id = winner_user[0]
+  else:
+    winner_user = cur.execute(
+      'SELECT id, discord_id FROM user WHERE LOWER(display_name) = LOWER(?)',
+      (winner_arg,)
+    ).fetchone()
+
+    if winner_user:
+      winner_id = winner_user[0]
+      winner_discord_id = winner_user[1]
+    else:
+      matching_members = [
+        m for m in ctx.guild.members
+        if m.display_name.lower() == winner_arg.lower() or m.name.lower() == winner_arg.lower()
+      ]
+
+      if matching_members:
+        member = matching_members[0]
+        winner_discord_id = str(member.id)
+
+        winner_user = cur.execute(
+          'SELECT id FROM user WHERE discord_id = ?',
+          (winner_discord_id,)
+        ).fetchone()
+
+        if winner_user:
+          winner_id = winner_user[0]
+
+  if not winner_id or winner_id not in (participant1_id, participant2_id):
+    p1_name = cur.execute(
+      'SELECT display_name FROM user WHERE id = ?',
+      (participant1_id,)
+    ).fetchone()[0]
+
+    p2_name = cur.execute(
+      'SELECT display_name FROM user WHERE id = ?',
+      (participant2_id,)
+    ).fetchone()[0]
+
+    return None, f'they aint a pard of this, its between {p1_name} and {p2_name}', None
+
+  all_participant_names = cur.execute(
+    'SELECT id, display_name FROM user WHERE id IN (?, ?)',
+    (participant1_id, participant2_id)
+  ).fetchall()
+
+  winner_name = None
+  loser_name = None
+
+  for pid, pname in all_participant_names:
+    if pid == winner_id:
+      winner_name = pname
+    else:
+      loser_name = pname
+
+  return winner_id, winner_name, loser_name
+
+
+@bot.command()
+async def resolve(ctx, bet_id: int, winner: str, *, notes: str = ''):
+  if ctx.author == bot.user:
+    return
+
+  resolver = cur.execute(
+    'SELECT id FROM user WHERE discord_id = ?',
+    (str(ctx.author.id),)
+  ).fetchone()
+
+  if not resolver:
+    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
+    return
+
+  resolver_id = resolver[0]
+
+  bet = cur.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
+
+  if not bet:
+    await ctx.channel.send("i ain't know nothin bout that ticket numbr")
+    return
+
+  if bet[5] != 'active':
+    await ctx.channel.send("cmon champ, that wager's long gone by now")
+    return
+
+  participant1_id = bet[1]
+  participant2_id = bet[2]
+
+  if resolver_id not in (participant1_id, participant2_id):
+    await ctx.channel.send("slow down pardner, you ain't a part of that there wager")
+    return
+
+  winner_id, result, loser_name = await parse_winner_for_bet(ctx, winner, participant1_id, participant2_id, cur)
+
+  if not winner_id:
+    await ctx.channel.send(result)
+    return
+
+  winner_name = result
+
+  resolution_notes = None
+  if notes:
+    if notes.startswith('notes:'):
+      resolution_notes = notes[6:].strip()
+    else:
+      resolution_notes = notes
+
+    if len(resolution_notes) > 280:
+      await ctx.channel.send('keep them notes under 280 characters pardner')
+      return
+
+  view = ResolutionConfirmView(
+    bet_id=bet_id,
+    winner_id=winner_id,
+    winner_name=winner_name,
+    loser_name=loser_name,
+    resolver_discord_id=str(ctx.author.id),
+    resolution_notes=resolution_notes
+  )
+
+  await ctx.channel.send(f'r ya sure {winner_name} wins?', view=view)
 
 
 if __name__ == '__main__':

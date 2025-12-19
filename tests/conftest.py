@@ -78,3 +78,14 @@ def mock_ctx_with_guild():
   ctx.guild.get_member = lambda member_id: mock_member2 if member_id == 67890 else mock_member1 if member_id == 12345 else None
 
   return ctx
+
+
+@pytest.fixture
+def mock_interaction():
+  interaction = MagicMock()
+  interaction.response = MagicMock()
+  interaction.response.edit_message = AsyncMock()
+  interaction.response.send_message = AsyncMock()
+  interaction.user = MagicMock()
+  interaction.user.id = 12345
+  return interaction
