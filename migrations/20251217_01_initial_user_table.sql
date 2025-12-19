@@ -8,4 +8,4 @@ CREATE TABLE user (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_users_discord_id ON users(discord_id);
+CREATE INDEX idx_user_discord_id ON user(discord_id);
