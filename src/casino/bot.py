@@ -26,20 +26,45 @@ cur = con.cursor()
 async def on_ready():
     print(f'We have logged in as {bot.user}')
 
+def spin_fn():
+  # to be filled in by Will
+  return 1
+
 @bot.command(help='test ur luck! remember, taran always loses')
-async def slot(ctx):
+async def spin(ctx):
   if ctx.author == bot.user:
     return
 
-  result = random.randint(1, 10)
+  gambler = cur.execute(
+    'SELECT id, display_name, spins, bungo_bux FROM user WHERE discord_id = ?',
+    (str(ctx.author.id),)
+  ).fetchone()
 
-  if result > 9 or str(ctx.author.id) == '108455086367207424':
-    await ctx.channel.send('u lost')
+  user_id, name, spins, bungo_bux = gambler
+
+  await ctx.channel.send('\n'.join([f'u have {spins} spins left!', f'all time {bungo_bux} bux']))
+
+  if spins == 0:
+    await ctx.channel.send(f'sorry {name}, but ur outta spins. come back when u get one over on ur buds')
     return
 
-  await ctx.channel.send('u win!')
-  return
+  bux = spin_fn()
 
+  cur.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?', (spins - 1, bux, str(ctx.author.id)))
+
+  if bux == 0:
+    await ctx.channel.send('u lost')
+    result = 'loss'
+  else:
+    await ctx.channel.send(f'u win {bux} bungo bux, congrats high roller!')
+    result = 'win'
+
+  cur.execute('INSERT INTO spins (user_id, result, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+              (user_id, result))
+
+  con.commit()
+  await ctx.channel.send(f'come back soon ya hear? you got {spins - 1} spins left!')
+  return
 
 @bot.command(help='introduce urself, pick a name and don\'t try any funny business')
 async def howdy(ctx, display_name: str):
@@ -112,7 +137,7 @@ async def help(ctx):
       'introduce yourself, if\'n you ain\'t already, through $howdy, and then get tryin\' with these other commands:\n'
   ]
   for command in bot.commands:
-      if (command.name != 'howdy'):
+      if command.name != 'howdy':
         lines.append(f'{command.name}')
         lines.append(f' - {command.help}\n')
 
@@ -228,6 +253,7 @@ class ResolutionConfirmView(discord.ui.View):
          WHERE id = ? AND state = 'active' ''',
       (self.resolver_discord_id, self.winner_id, self.resolution_notes, self.bet_id)
     )
+    cur.execute('UPDATE user SET spins = spins + 1 WHERE id = ?', (self.winner_id,))
     con.commit()
 
     if cur.rowcount == 0:

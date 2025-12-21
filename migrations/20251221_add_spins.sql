@@ -1,0 +1,10 @@
+ALTER TABLE user ADD COLUMN spins INTEGER DEFAULT 0;
+ALTER TABLE user ADD COLUMN bungo_bux INTEGER DEFAULT 0;
+
+CREATE TABLE spins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  result TEXT CHECK(result in ('win', 'loss')) NOT NULL,
+  created_at TIMESTAMP NULL,
+  FOREIGN KEY (user_id) REFERENCES user(id)
+);
