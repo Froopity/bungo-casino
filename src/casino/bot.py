@@ -16,7 +16,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='$', intents=intents)
 
-db_path = (Path(__file__).parent.parent.parent / 'casino.db').resolve()
+db_path = os.getenv('DATABASE_PATH', str((Path(__file__).parent.parent.parent / 'casino.db').resolve()))
 con = sqlite3.connect(db_path)
 cur = con.cursor()
 
