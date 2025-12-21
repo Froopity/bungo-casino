@@ -2,6 +2,7 @@ import os
 import sqlite3
 import sys
 import uuid
+import random
 from pathlib import Path
 
 import discord
@@ -9,12 +10,13 @@ from discord.ext import commands
 import dotenv
 
 
+random.seed()
 dotenv.load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix='$', intents=intents)
+bot = commands.Bot(command_prefix='$', intents=intents, help_command=None)
 
 db_path = os.getenv('DATABASE_PATH', str((Path(__file__).parent.parent.parent / 'casino.db').resolve()))
 con = sqlite3.connect(db_path)
@@ -24,12 +26,14 @@ cur = con.cursor()
 async def on_ready():
     print(f'We have logged in as {bot.user}')
 
-@bot.command()
+@bot.command(help='test ur luck! remember, taran always loses')
 async def slot(ctx):
   if ctx.author == bot.user:
     return
 
-  if str(ctx.author.id) == '108455086367207424':
+  result = random.randint(1, 10)
+
+  if result > 9 or str(ctx.author.id) == '108455086367207424':
     await ctx.channel.send('u lost')
     return
 
@@ -37,11 +41,11 @@ async def slot(ctx):
   return
 
 
-@bot.command()
+@bot.command(help='introduce urself, pick a name and don\'t try any funny business')
 async def howdy(ctx, display_name: str):
     if ctx.author == bot.user:
         return
-    
+
     print(display_name)
 
     existing_user = cur.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
@@ -99,7 +103,23 @@ def parse_ticket_id(display_id: int) -> int:
         raise ValueError(f"Invalid ticket number format: {display_id}")
     return int(id_str[1:])
 
-@bot.command()
+@bot.command(help='already figured that one out, huh? helps, duh')
+async def help(ctx):
+  lines = [
+      '```'
+      'new around here pardner? let\'s help get ya situated real fast like:',
+      'i don\'t know how\'s it works were ur from, but here? we all start our conversations with \'$\'',
+      'introduce yourself, if\'n you ain\'t already, through $howdy, and then get tryin\' with these other commands:\n'
+  ]
+  for command in bot.commands:
+      if (command.name != 'howdy'):
+        lines.append(f'{command.name}')
+        lines.append(f' - {command.help}\n')
+
+  lines.append('```')
+  await ctx.channel.send(f'{'\n'.join(lines)}')
+
+@bot.command(help='place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y\'alls wager')
 async def wager(ctx, opponent: str, *, description: str):
   if ctx.author == bot.user:
     return
@@ -361,7 +381,7 @@ async def parse_winner_for_bet(ctx, winner_arg, participant1_id, participant2_id
   return winner_id, winner_name, loser_name
 
 
-@bot.command()
+@bot.command(help='bet\'s all done? well then, better let me know who won! show me ur ticket and ur winner, and i\'ll put it up on that thar leadrbord')
 async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
   if ctx.author == bot.user:
     return
@@ -438,7 +458,7 @@ async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
   await ctx.channel.send(confirmation_msg, view=view)
 
 
-@bot.command()
+@bot.command(help='bet not work out? just let me know the ticket number and i\'ll take it offa my books', aliases=['rules'])
 async def cancel(ctx, display_bet_id: int):
   if ctx.author == bot.user:
     return
@@ -485,7 +505,7 @@ async def cancel(ctx, display_bet_id: int):
   await ctx.channel.send('r ya sure?', view=view)
 
 
-@bot.command()
+@bot.command(help='forgot ur ticket number eh? that\'s okay, i got \'em all up here, just ask and i\'ll give ya the full list of active bets')
 async def tickets(ctx):
   if ctx.author == bot.user:
     return
@@ -537,7 +557,7 @@ async def tickets(ctx):
   await ctx.channel.send('\n'.join(lines))
 
 
-@bot.command(aliases=['leaderboard'])
+@bot.command(aliases=['leaderboard'], help='i can tell ya who\'s the better better outta u \'n ur buds')
 async def leadrbord(ctx):
   if ctx.author == bot.user:
     return
