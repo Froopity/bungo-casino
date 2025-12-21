@@ -526,8 +526,10 @@ async def tickets(ctx):
 
   for ticket_id, description, p1_name, p2_name, created_at in tickets:
     display_ticket_id = format_ticket_id(ticket_id)
+    created_date = created_at.split()[0] if created_at else ''
     lines.append(f'#{display_ticket_id}: {description}')
     lines.append(f'  between {p1_name} and {p2_name}')
+    lines.append(f'  created: {created_date}')
     lines.append('')
 
   lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
