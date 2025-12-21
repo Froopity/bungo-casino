@@ -1,0 +1,15 @@
+services:
+  casino-bot:
+    build: .
+    container_name: bungo-casino
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist the database
+      - casino-data:/data
+    environment:
+      - DATABASE_PATH=/data/casino.db
+
+volumes:
+  casino-data:
