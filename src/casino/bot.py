@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import sys
 import uuid
 from pathlib import Path
 
@@ -23,15 +24,53 @@ cur = con.cursor()
 async def on_ready():
     print(f'We have logged in as {bot.user}')
 
+@bot.command()
+async def slot(ctx):
+  if ctx.author == bot.user:
+    return
+
+  if str(ctx.author.id) == '108455086367207424':
+    await ctx.channel.send('u lost')
+    return
+
+  await ctx.channel.send('u win!')
+  return
+
 
 @bot.command()
 async def howdy(ctx, display_name: str):
     if ctx.author == bot.user:
         return
+    
+    print(display_name)
 
     existing_user = cur.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
     if existing_user:
         await ctx.channel.send(f'u already got a name: {existing_user[0]}')
+        return
+
+    if display_name is None or len(display_name) == 0:
+        await ctx.channel.send('u gotta tell me ur name! say "$howdy <urname>"')
+        return
+
+    if len(display_name) > 32:
+        await ctx.channel.send('i aint gonna remember all that, pick a shorter name')
+        return
+
+    if display_name == '@bungo' or display_name == '<@1450042419964809328>' or display_name in str(bot.user.id):
+        await ctx.channel.send('fuckoffyoucunt')
+        return
+
+    if display_name.startswith('@'):
+        await ctx.channel.send('think ur fucken cheeky huh')
+        return
+
+    if not display_name[0].isalnum():
+        await ctx.channel.send('it gets weird when u start ur name with a symbol, try somethin else')
+        return
+
+    if not is_valid_name(display_name):
+        await ctx.channel.send('nice try bingus, normal werds only in my casino (alphanumeric and !@#$%)')
         return
 
     name_taken = cur.execute('SELECT 1 FROM user WHERE display_name = ?', (display_name,)).fetchone()
@@ -43,6 +82,9 @@ async def howdy(ctx, display_name: str):
     con.commit()
     await ctx.channel.send(f"why howdy {display_name}, welcome to ol' bungo's casino!")
 
+def is_valid_name(text):
+    allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%')
+    return all(char in allowed for char in text)
 
 @bot.command()
 async def wager(ctx, opponent: str, *, description: str):
@@ -96,7 +138,7 @@ async def wager(ctx, opponent: str, *, description: str):
       guild_member = ctx.guild.get_member(int(opponent_user[1]))
 
       if not guild_member:
-        await ctx.channel.send(f"hold on hold on, {opponent} has to say $howdy to ol' bungo first")
+        await ctx.channel.send(f"hold on hold on, ur pardner has to say $howdy to ol' bungo first")
         return
 
       opponent_id = opponent_user[0]
@@ -107,10 +149,10 @@ async def wager(ctx, opponent: str, *, description: str):
       ]
 
       if matching_members:
-        await ctx.channel.send(f"hold on hold on, {opponent} has to say $howdy to ol' bungo first")
+        await ctx.channel.send(f"hold on hold on, ur pardner has to say $howdy to ol' bungo first")
         return
       else:
-        await ctx.channel.send(f"i ain't never heard o' no {opponent}")
+        await ctx.channel.send(f"i ain't never heard o' no one with that name")
         return
 
   cur.execute(
@@ -128,7 +170,7 @@ async def wager(ctx, opponent: str, *, description: str):
 
 class ResolutionConfirmView(discord.ui.View):
   def __init__(self, bet_id: int, winner_id: str, winner_name: str, loser_name: str,
-               resolver_discord_id: str, resolution_notes: str = None):
+               resolver_discord_id: str, resolution_notes: str | None = None):
     super().__init__(timeout=60.0)
     self.bet_id = bet_id
     self.winner_id = winner_id
@@ -468,4 +510,9 @@ async def leadrbord(ctx):
 
 
 if __name__ == '__main__':
-    bot.run(os.getenv('DISCORD_BOT_TOKEN'))
+    bot_token = os.getenv('DISCORD_BOT_TOKEN')
+    if bot_token is None:
+      print('Discord API token not found')
+      sys.exit(1)
+
+    bot.run(bot_token)
