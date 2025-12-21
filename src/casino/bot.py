@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands
 import dotenv
 
-from slots import spin_slots
+from casino.slots import spin_slots
 
 
 random.seed()
