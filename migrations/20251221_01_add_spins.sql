@@ -4,7 +4,7 @@ ALTER TABLE user ADD COLUMN bungo_bux INTEGER DEFAULT 0;
 CREATE TABLE spins (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL,
-  result TEXT CHECK(result in ('win', 'loss')) NOT NULL,
-  created_at TIMESTAMP NULL,
+  winnings NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES user(id)
 );

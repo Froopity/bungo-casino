@@ -9,6 +9,8 @@ import discord
 from discord.ext import commands
 import dotenv
 
+from slots import spin_slots
+
 
 random.seed()
 dotenv.load_dotenv()
@@ -26,45 +28,47 @@ cur = con.cursor()
 async def on_ready():
     print(f'We have logged in as {bot.user}')
 
-def spin_fn():
-  # to be filled in by Will
-  return 1
 
 @bot.command(help='test ur luck! remember, taran always loses')
 async def spin(ctx):
   if ctx.author == bot.user:
     return
-
+  
   gambler = cur.execute(
     'SELECT id, display_name, spins, bungo_bux FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
 
-  user_id, name, spins, bungo_bux = gambler
+  if not gambler:
+    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
+    return
 
-  await ctx.channel.send('\n'.join([f'u have {spins} spins left!', f'all time {bungo_bux} bux']))
+  user_id, name, spins, bungo_bux = gambler
 
   if spins == 0:
     await ctx.channel.send(f'sorry {name}, but ur outta spins. come back when u get one over on ur buds')
     return
 
-  bux = spin_fn()
+  frame, bux = spin_slots()
+  msg = f'''```\n{frame}\n```'''
 
-  cur.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?', (spins - 1, bux, str(ctx.author.id)))
+  cur.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?', (spins - 1, bungo_bux + bux, str(ctx.author.id)))
 
   if bux == 0:
-    await ctx.channel.send('u lost')
-    result = 'loss'
+    msg += 'u lost\n'
   else:
-    await ctx.channel.send(f'u win {bux} bungo bux, congrats high roller!')
-    result = 'win'
+    msg += f'u win {bux} bungo bux, congrats high roller!\n'
 
-  cur.execute('INSERT INTO spins (user_id, result, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
-              (user_id, result))
+  cur.execute('INSERT INTO spins (user_id, winnings) VALUES (?, ?)',
+              (user_id, bux))
 
   con.commit()
-  await ctx.channel.send(f'come back soon ya hear? you got {spins - 1} spins left!')
-  return
+  if spins > 1:
+    msg += f'come back soon ya hear? you got {spins - 1} spins left!'
+  else:
+    msg += 'ur all outta spins now champ!'
+  await ctx.channel.send(msg)
+
 
 @bot.command(help='introduce urself, pick a name and don\'t try any funny business')
 async def howdy(ctx, display_name: str):
@@ -243,6 +247,10 @@ class ResolutionConfirmView(discord.ui.View):
     for item in self.children:
       item.disabled = True
 
+    # Get loser_id to update their bungo dollars
+    bet = cur.execute('SELECT participant1_id, participant2_id FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
+    loser_id = bet[0] if bet[1] == self.winner_id else bet[1]
+
     cur.execute(
       '''UPDATE bet
          SET state = 'resolved',
@@ -253,7 +261,8 @@ class ResolutionConfirmView(discord.ui.View):
          WHERE id = ? AND state = 'active' ''',
       (self.resolver_discord_id, self.winner_id, self.resolution_notes, self.bet_id)
     )
-    cur.execute('UPDATE user SET spins = spins + 1 WHERE id = ?', (self.winner_id,))
+    cur.execute('UPDATE user SET spins = spins + 1, bungo_dollars = bungo_dollars + 1 WHERE id = ?', (self.winner_id,))
+    cur.execute('UPDATE user SET bungo_dollars = bungo_dollars - 1 WHERE id = ?', (loser_id,))
     con.commit()
 
     if cur.rowcount == 0:
@@ -584,6 +593,38 @@ async def tickets(ctx):
   await ctx.channel.send('\n'.join(lines))
 
 
+@bot.command(help='check ur holdings - bungo dollars, bungo bux, and spins')
+async def wallet(ctx):
+  if ctx.author == bot.user:
+    return
+
+  user = cur.execute(
+    'SELECT display_name, bungo_dollars, bungo_bux, spins FROM user WHERE discord_id = ?',
+    (str(ctx.author.id),)
+  ).fetchone()
+
+  if not user:
+    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
+    return
+
+  display_name, bungo_dollars, bungo_bux, spins = user
+
+  lines = ['```', f"{display_name}'s wallet", '━━━━━━━━━━━━━━━━━━━━━━━']
+
+  if bungo_dollars >= 0:
+    dollars_str = f'${bungo_dollars}'
+  else:
+    dollars_str = f'-${abs(bungo_dollars)}'
+
+  lines.append(f'bungo dollars: {dollars_str}')
+  lines.append(f'bungo bux:     {bungo_bux}')
+  lines.append(f'spins:         {spins}')
+  lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
+  lines.append('```')
+
+  await ctx.channel.send('\n'.join(lines))
+
+
 @bot.command(aliases=['leaderboard'], help='i can tell ya who\'s the better better outta u \'n ur buds')
 async def leadrbord(ctx):
   if ctx.author == bot.user:
@@ -592,18 +633,14 @@ async def leadrbord(ctx):
   query = '''
     WITH user_stats AS (
       SELECT
-        u.id,
         u.display_name,
-        SUM(CASE WHEN b.winner_id = u.id THEN 1 ELSE 0 END) AS wins,
-        SUM(CASE WHEN b.winner_id = u.id THEN 1
-                 WHEN (b.participant1_id = u.id OR b.participant2_id = u.id)
-                      AND b.winner_id IS NOT NULL
-                      AND b.winner_id != u.id THEN -1
-                 ELSE 0 END) AS balance
+        u.bungo_dollars AS balance,
+        SUM(CASE WHEN b.winner_id = u.id THEN 1 ELSE 0 END) AS wins
       FROM user u
       LEFT JOIN bet b ON (b.participant1_id = u.id OR b.participant2_id = u.id)
                       AND b.state = 'resolved'
-      GROUP BY u.id, u.display_name
+                      AND b.winner_id = u.id
+      GROUP BY u.id, u.display_name, u.bungo_dollars
       HAVING COUNT(CASE WHEN b.state = 'resolved' THEN 1 END) > 0
     )
     SELECT display_name, balance, wins
