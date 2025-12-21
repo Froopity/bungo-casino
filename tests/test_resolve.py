@@ -30,7 +30,7 @@ async def test_resolve_success_with_mention(mock_db, mock_ctx_with_guild, mock_i
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2')
+    await resolve(mock_ctx_with_guild, 101, 'Player2')
 
     mock_ctx_with_guild.channel.send.assert_called_once()
     call_args = mock_ctx_with_guild.channel.send.call_args
@@ -73,7 +73,7 @@ async def test_resolve_success_with_display_name(mock_db, mock_ctx_with_guild, m
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2')
+    await resolve(mock_ctx_with_guild, 101, 'Player2')
 
     mock_ctx_with_guild.channel.send.assert_called_once()
     call_args = mock_ctx_with_guild.channel.send.call_args
@@ -109,7 +109,7 @@ async def test_resolve_participant1_wins(mock_db, mock_ctx_with_guild, mock_inte
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player1')
+    await resolve(mock_ctx_with_guild, 101, 'Player1')
 
     view = mock_ctx_with_guild.channel.send.call_args[1]['view']
     await view.confirm.callback(mock_interaction)
@@ -147,7 +147,7 @@ async def test_resolve_either_participant_can_resolve(mock_db, mock_ctx_with_gui
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_participant2, 1, 'Player1')
+    await resolve(mock_ctx_participant2, 101, 'Player1')
 
     mock_ctx_participant2.channel.send.assert_called_once()
     assert 'r ya sure Player1 wins?' in mock_ctx_participant2.channel.send.call_args[0][0]
@@ -175,7 +175,7 @@ async def test_resolve_confirmation_button_nevrmind(mock_db, mock_ctx_with_guild
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2')
+    await resolve(mock_ctx_with_guild, 101, 'Player2')
 
     view = mock_ctx_with_guild.channel.send.call_args[1]['view']
     await view.cancel.callback(mock_interaction)
@@ -208,7 +208,7 @@ async def test_resolve_with_notes(mock_db, mock_ctx_with_guild, mock_interaction
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2', notes='notes: player2 actually did it')
+    await resolve(mock_ctx_with_guild, 101, 'Player2', notes='notes: player2 actually did it')
 
     view = mock_ctx_with_guild.channel.send.call_args[1]['view']
     await view.confirm.callback(mock_interaction)
@@ -238,7 +238,7 @@ async def test_resolve_resolver_not_registered(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2')
+    await resolve(mock_ctx_with_guild, 101, 'Player2')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       'woaah slow down ther cowboy, you gotta say $howdy first'
@@ -258,7 +258,7 @@ async def test_resolve_bet_not_found(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 999, 'Player2')
+    await resolve(mock_ctx_with_guild, 1999, 'Player2')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "i ain't know nothin bout that ticket numbr"
@@ -285,7 +285,7 @@ async def test_resolve_bet_already_resolved(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2')
+    await resolve(mock_ctx_with_guild, 101, 'Player2')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "cmon champ, that wager's long gone by now"
@@ -312,7 +312,7 @@ async def test_resolve_bet_already_cancelled(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2')
+    await resolve(mock_ctx_with_guild, 101, 'Player2')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "cmon champ, that wager's long gone by now"
@@ -342,7 +342,7 @@ async def test_resolve_not_a_participant(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2')
+    await resolve(mock_ctx_with_guild, 101, 'Player2')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "slow down pardner, you ain't a part of that there wager"
@@ -374,7 +374,7 @@ async def test_resolve_winner_not_participant(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player3')
+    await resolve(mock_ctx_with_guild, 101, 'Player3')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "they aint a pard of this, its between Player1 and Player2"
@@ -403,7 +403,7 @@ async def test_resolve_notes_too_long(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2', notes=long_notes)
+    await resolve(mock_ctx_with_guild, 101, 'Player2', notes=long_notes)
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       'keep them notes under 280 characters pardner'
@@ -432,7 +432,7 @@ async def test_resolve_case_insensitive_display_name(mock_db, mock_ctx_with_guil
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'player2')
+    await resolve(mock_ctx_with_guild, 101, 'player2')
 
     mock_ctx_with_guild.channel.send.assert_called_once()
     assert 'r ya sure' in mock_ctx_with_guild.channel.send.call_args[0][0]
@@ -460,7 +460,7 @@ async def test_resolve_database_fields_populated(mock_db, mock_ctx_with_guild, m
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import resolve
 
-    await resolve(mock_ctx_with_guild, 1, 'Player2', notes='notes: test notes')
+    await resolve(mock_ctx_with_guild, 101, 'Player2', notes='notes: test notes')
 
     view = mock_ctx_with_guild.channel.send.call_args[1]['view']
     await view.confirm.callback(mock_interaction)

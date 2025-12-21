@@ -1,40 +1,15 @@
-import sqlite3
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-
-
-@pytest.fixture
-def mock_db():
-  con = sqlite3.connect(':memory:')
-  cur = con.cursor()
-  cur.execute('''
-    CREATE TABLE user (
-      id TEXT PRIMARY KEY,
-      discord_id INTEGER,
-      display_name TEXT
-    )
-  ''')
-  con.commit()
-  return con, cur
-
-
-@pytest.fixture
-def mock_ctx():
-  ctx = MagicMock()
-  ctx.author = MagicMock()
-  ctx.author.id = 12345
-  ctx.channel = MagicMock()
-  ctx.channel.send = AsyncMock()
-  return ctx
 
 
 @pytest.mark.asyncio
 async def test_howdy_creates_new_user(mock_db, mock_ctx):
   con, cur = mock_db
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
+    mock_bot.user.id = 999999
     from casino.bot import howdy
 
     await howdy(mock_ctx, 'TestUser')
@@ -53,7 +28,8 @@ async def test_howdy_rejects_existing_user(mock_db, mock_ctx):
               (str(uuid.uuid4()), 12345, 'ExistingUser'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
+    mock_bot.user.id = 999999
     from casino.bot import howdy
 
     await howdy(mock_ctx, 'NewName')
@@ -68,7 +44,8 @@ async def test_howdy_rejects_taken_display_name(mock_db, mock_ctx):
               (str(uuid.uuid4()), 99999, 'TakenName'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
+    mock_bot.user.id = 999999
     from casino.bot import howdy
 
     await howdy(mock_ctx, 'TakenName')

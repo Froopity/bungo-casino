@@ -164,7 +164,7 @@ async def test_wager_opponent_in_guild_not_registered(mock_db, mock_ctx_with_gui
     await wager(mock_ctx_with_guild, 'testopponent', description='test bet')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
-      'hold on hold on, testopponent has to say $howdy to ol\' bungo first'
+      'hold on hold on, ur pardner has to say $howdy to ol\' bungo first'
     )
 
 
@@ -183,7 +183,7 @@ async def test_wager_opponent_not_in_guild(mock_db, mock_ctx_with_guild):
     await wager(mock_ctx_with_guild, 'NoSuchPerson', description='test bet')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
-      'i ain\'t never heard o\' no NoSuchPerson'
+      'i ain\'t never heard o\' no one with that name'
     )
 
 
@@ -259,7 +259,7 @@ async def test_wager_bet_id_returned(mock_db, mock_ctx_with_guild):
     await wager(mock_ctx_with_guild, 'TestOpponent', description='First bet')
 
     call_args = mock_ctx_with_guild.channel.send.call_args[0][0]
-    assert 'alrighty your ticket is 1 good luck champ' == call_args
+    assert 'alrighty your ticket is 101 good luck champ' == call_args
 
 
 @pytest.mark.asyncio
@@ -281,5 +281,5 @@ async def test_wager_opponent_registered_not_in_guild(mock_db, mock_ctx_with_gui
     await wager(mock_ctx_with_guild, 'GoneUser', description='test bet')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
-      'hold on hold on, GoneUser has to say $howdy to ol\' bungo first'
+      'hold on hold on, ur pardner has to say $howdy to ol\' bungo first'
     )

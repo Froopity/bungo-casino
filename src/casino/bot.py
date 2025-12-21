@@ -86,6 +86,19 @@ def is_valid_name(text):
     allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%')
     return all(char in allowed for char in text)
 
+def format_ticket_id(db_id: int) -> int:
+    """Convert database ID to display ticket number.
+    Examples: 5 -> 105, 15 -> 115, 123 -> 1123"""
+    return int(f"1{db_id:02d}")
+
+def parse_ticket_id(display_id: int) -> int:
+    """Convert display ticket number back to database ID.
+    Examples: 105 -> 5, 115 -> 15, 1123 -> 123"""
+    id_str = str(display_id)
+    if not id_str.startswith('1') or len(id_str) < 3:
+        raise ValueError(f"Invalid ticket number format: {display_id}")
+    return int(id_str[1:])
+
 @bot.command()
 async def wager(ctx, opponent: str, *, description: str):
   if ctx.author == bot.user:
@@ -164,8 +177,9 @@ async def wager(ctx, opponent: str, *, description: str):
   con.commit()
 
   bet_id = cur.lastrowid
+  display_ticket_id = format_ticket_id(bet_id)
 
-  await ctx.channel.send(f'alrighty your ticket is {bet_id} good luck champ')
+  await ctx.channel.send(f'alrighty your ticket is {display_ticket_id} good luck champ')
 
 
 class ResolutionConfirmView(discord.ui.View):
@@ -348,7 +362,7 @@ async def parse_winner_for_bet(ctx, winner_arg, participant1_id, participant2_id
 
 
 @bot.command()
-async def resolve(ctx, bet_id: int, winner: str, *, notes: str = ''):
+async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
   if ctx.author == bot.user:
     return
 
@@ -362,6 +376,12 @@ async def resolve(ctx, bet_id: int, winner: str, *, notes: str = ''):
     return
 
   resolver_id = resolver[0]
+
+  try:
+    bet_id = parse_ticket_id(display_bet_id)
+  except ValueError:
+    await ctx.channel.send("that don't look like a proper ticket numbr")
+    return
 
   bet = cur.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
 
@@ -387,6 +407,7 @@ async def resolve(ctx, bet_id: int, winner: str, *, notes: str = ''):
     return
 
   winner_name = result
+  bet_description = bet[3]
 
   resolution_notes = None
   if notes:
@@ -408,11 +429,17 @@ async def resolve(ctx, bet_id: int, winner: str, *, notes: str = ''):
     resolution_notes=resolution_notes
   )
 
-  await ctx.channel.send(f'r ya sure {winner_name} wins?', view=view)
+  confirmation_msg = (
+    f"wager: {bet_description}\n"
+    f"between: {winner_name} and {loser_name}\n\n"
+    f"r ya sure {winner_name} wins?"
+  )
+
+  await ctx.channel.send(confirmation_msg, view=view)
 
 
 @bot.command()
-async def cancel(ctx, bet_id: int):
+async def cancel(ctx, display_bet_id: int):
   if ctx.author == bot.user:
     return
 
@@ -426,6 +453,12 @@ async def cancel(ctx, bet_id: int):
     return
 
   canceller_id = canceller[0]
+
+  try:
+    bet_id = parse_ticket_id(display_bet_id)
+  except ValueError:
+    await ctx.channel.send("that don't look like a proper ticket numbr")
+    return
 
   bet = cur.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
 
@@ -450,6 +483,58 @@ async def cancel(ctx, bet_id: int):
   )
 
   await ctx.channel.send('r ya sure?', view=view)
+
+
+@bot.command()
+async def tickets(ctx):
+  if ctx.author == bot.user:
+    return
+
+  user = cur.execute(
+    'SELECT id, display_name FROM user WHERE discord_id = ?',
+    (str(ctx.author.id),)
+  ).fetchone()
+
+  if not user:
+    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
+    return
+
+  user_id = user[0]
+
+  query = '''
+    SELECT
+      b.id,
+      b.description,
+      u1.display_name as p1_name,
+      u2.display_name as p2_name,
+      b.created_at
+    FROM bet b
+    JOIN user u1 ON b.participant1_id = u1.id
+    JOIN user u2 ON b.participant2_id = u2.id
+    WHERE (b.participant1_id = ? OR b.participant2_id = ?)
+      AND b.state = 'active'
+    ORDER BY b.created_at DESC
+  '''
+
+  tickets = cur.execute(query, (user_id, user_id)).fetchall()
+
+  if not tickets:
+    await ctx.channel.send("u ain't got no active wagers right now pardner")
+    return
+
+  lines = ['```', 'ur active tickets', '━━━━━━━━━━━━━━━━━━━━━━━']
+
+  for ticket_id, description, p1_name, p2_name, created_at in tickets:
+    display_ticket_id = format_ticket_id(ticket_id)
+    desc_display = description[:40] + '...' if len(description) > 40 else description
+    lines.append(f'#{display_ticket_id}: {desc_display}')
+    lines.append(f'  between {p1_name} and {p2_name}')
+    lines.append('')
+
+  lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
+  lines.append('```')
+
+  await ctx.channel.send('\n'.join(lines))
 
 
 @bot.command(aliases=['leaderboard'])

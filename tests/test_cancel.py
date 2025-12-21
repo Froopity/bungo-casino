@@ -25,7 +25,7 @@ async def test_cancel_success(mock_db, mock_ctx_with_guild, mock_interaction):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 1)
+    await cancel(mock_ctx_with_guild, 101)
 
     mock_ctx_with_guild.channel.send.assert_called_once()
     call_args = mock_ctx_with_guild.channel.send.call_args
@@ -72,7 +72,7 @@ async def test_cancel_either_participant_can_cancel(mock_db, mock_ctx_with_guild
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_participant2, 1)
+    await cancel(mock_ctx_participant2, 101)
 
     mock_ctx_participant2.channel.send.assert_called_once()
     assert 'r ya sure?' in mock_ctx_participant2.channel.send.call_args[0][0]
@@ -98,7 +98,7 @@ async def test_cancel_confirmation_button_nevrmind(mock_db, mock_ctx_with_guild,
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 1)
+    await cancel(mock_ctx_with_guild, 101)
 
     view = mock_ctx_with_guild.channel.send.call_args[1]['view']
     await view.cancel.callback(mock_interaction)
@@ -131,7 +131,7 @@ async def test_cancel_canceller_not_registered(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 1)
+    await cancel(mock_ctx_with_guild, 101)
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       'woaah slow down ther cowboy, you gotta say $howdy first'
@@ -151,7 +151,7 @@ async def test_cancel_bet_not_found(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 999)
+    await cancel(mock_ctx_with_guild, 1999)
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "i ain't know nothin bout that ticket numbr"
@@ -178,7 +178,7 @@ async def test_cancel_bet_already_resolved(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 1)
+    await cancel(mock_ctx_with_guild, 101)
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "cmon champ, that wager's long gone by now"
@@ -205,7 +205,7 @@ async def test_cancel_bet_already_cancelled(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 1)
+    await cancel(mock_ctx_with_guild, 101)
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "cmon champ, that wager's long gone by now"
@@ -235,7 +235,7 @@ async def test_cancel_not_a_participant(mock_db, mock_ctx_with_guild):
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 1)
+    await cancel(mock_ctx_with_guild, 101)
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
       "slow down pardner, you ain't a part of that there wager"
@@ -262,7 +262,7 @@ async def test_cancel_race_condition(mock_db, mock_ctx_with_guild, mock_interact
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 1)
+    await cancel(mock_ctx_with_guild, 101)
 
     view = mock_ctx_with_guild.channel.send.call_args[1]['view']
 
@@ -296,7 +296,7 @@ async def test_cancel_database_state_updated(mock_db, mock_ctx_with_guild, mock_
   with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
     from casino.bot import cancel
 
-    await cancel(mock_ctx_with_guild, 1)
+    await cancel(mock_ctx_with_guild, 101)
 
     view = mock_ctx_with_guild.channel.send.call_args[1]['view']
     await view.confirm.callback(mock_interaction)
