@@ -507,7 +507,7 @@ async def wallet(ctx):
     dollars_str = f'-${abs(bungo_dollars)}'
 
   lines.append(f'bungo dollars: {dollars_str}')
-  lines.append(f'bungo bux:     ͇{bungo_bux}')
+  lines.append(f'bungo bux:     {bungo_bux}')
   lines.append(f'spins:         {spins}')
   lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
   lines.append('```')
