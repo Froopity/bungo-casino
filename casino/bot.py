@@ -192,8 +192,53 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
 
     opponent_id = opponent_user[0]
   else:
-    await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
-    return
+    opponent_user = cur.execute(
+      'SELECT id, discord_id FROM user WHERE LOWER(display_name) = LOWER(?)',
+      (opponent,)
+    ).fetchone()
+
+    if opponent_user:
+      opponent_id, opponent_discord_id = opponent_user
+
+      if str(ctx.author.id) == opponent_discord_id:
+        await ctx.channel.send('you cant place a wager on urself!')
+        return
+
+      if ctx.guild:
+        opponent_in_guild = ctx.guild.get_member(int(opponent_discord_id))
+        if not opponent_in_guild:
+          await ctx.channel.send('hold on hold on, ur pardner has to say $howdy to ol\' bungo first')
+          return
+    else:
+      if ctx.guild:
+        matching_members = [
+          m for m in ctx.guild.members
+          if m.display_name.lower() == opponent.lower() or m.name.lower() == opponent.lower()
+        ]
+
+        if matching_members:
+          member = matching_members[0]
+
+          if member.id == ctx.author.id:
+            await ctx.channel.send('you cant place a wager on urself!')
+            return
+
+          opponent_user = cur.execute(
+            'SELECT id FROM user WHERE discord_id = ?',
+            (str(member.id),)
+          ).fetchone()
+
+          if opponent_user:
+            opponent_id = opponent_user[0]
+          else:
+            await ctx.channel.send('hold on hold on, ur pardner has to say $howdy to ol\' bungo first')
+            return
+        else:
+          await ctx.channel.send('i ain\'t never heard o\' no one with that name')
+          return
+      else:
+        await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
+        return
 
   cur.execute(
     '''INSERT INTO bet
@@ -216,6 +261,15 @@ class ResolutionConfirmView(discord.ui.View):
     self.loser_name = loser_name
     self.resolver_discord_id = resolver_discord_id
     self.resolution_notes = resolution_notes
+
+  async def interaction_check(self, interaction: discord.Interaction) -> bool:
+    if str(interaction.user.id) != self.resolver_discord_id:
+      await interaction.response.send_message(
+        'slow down pardner, only the person who done what called me can do that',
+        ephemeral=True
+      )
+      return False
+    return True
 
   @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
   async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -276,6 +330,15 @@ class CancellationConfirmView(discord.ui.View):
     super().__init__(timeout=60.0)
     self.bet_id = bet_id
     self.canceller_discord_id = canceller_discord_id
+
+  async def interaction_check(self, interaction: discord.Interaction) -> bool:
+    if str(interaction.user.id) != self.canceller_discord_id:
+      await interaction.response.send_message(
+        'slow down pardner, only the person who done what called me can do that',
+        ephemeral=True
+      )
+      return False
+    return True
 
   @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
   async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -339,7 +402,8 @@ async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
     await ctx.channel.send("that don't look like a proper ticket numbr")
     return
 
-  bet = cur.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?', (bet_id,)).fetchone()
+  bet = cur.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?',
+                    (bet_id,)).fetchone()
 
   if not bet:
     await ctx.channel.send("i ain't know nothin bout that ticket numbr")

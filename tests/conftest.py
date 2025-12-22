@@ -1,43 +1,36 @@
 import sys
 import sqlite3
 import uuid
+import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from yoyo import read_migrations, get_backend
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 @pytest.fixture
 def mock_db():
-  con = sqlite3.connect(':memory:')
+  with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+    db_path = tmp.name
+
+  backend = get_backend(f'sqlite:///{db_path}')
+
+  migrations_path = Path(__file__).parent.parent / 'migrations'
+  migrations = read_migrations(str(migrations_path))
+
+  with backend.lock():
+    backend.apply_migrations(backend.to_apply(migrations))
+
+  con = backend.connection
   cur = con.cursor()
-  cur.execute('''
-    CREATE TABLE user (
-      id TEXT PRIMARY KEY,
-      discord_id INTEGER,
-      display_name TEXT
-    )
-  ''')
-  cur.execute('''
-    CREATE TABLE bet (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      participant1_id TEXT NOT NULL,
-      participant2_id TEXT NOT NULL,
-      description TEXT NOT NULL,
-      details TEXT NULL,
-      state TEXT NOT NULL DEFAULT 'active',
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      created_by_discord_id TEXT NOT NULL,
-      resolved_at TIMESTAMP NULL,
-      resolved_by_discord_id TEXT NULL,
-      winner_id TEXT NULL,
-      resolution_notes TEXT NULL
-    )
-  ''')
-  con.commit()
-  return con, cur
+
+  yield con, cur
+
+  con.close()
+  Path(db_path).unlink(missing_ok=True)
 
 
 @pytest.fixture

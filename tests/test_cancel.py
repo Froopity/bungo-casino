@@ -276,3 +276,45 @@ async def test_cancel_database_state_updated(mock_db, mock_ctx_with_guild, mock_
 
     bet = cur.execute('SELECT state FROM bet WHERE id = 1').fetchone()
     assert bet[0] == 'cancelled'
+
+
+@pytest.mark.asyncio
+async def test_cancel_unauthorized_button_click(mock_db, mock_ctx_with_guild, mock_interaction):
+  con, cur = mock_db
+
+  p1_id = str(uuid.uuid4())
+  p2_id = str(uuid.uuid4())
+
+  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
+              (p1_id, 12345, 'Player1'))
+  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
+              (p2_id, 67890, 'Player2'))
+  cur.execute('''INSERT INTO bet
+                 (participant1_id, participant2_id, description, state, created_by_discord_id)
+                 VALUES (?, ?, ?, 'active', ?)''',
+              (p1_id, p2_id, 'Test bet', '12345'))
+  con.commit()
+
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+    from casino.bot import cancel
+
+    await cancel(mock_ctx_with_guild, 101)
+
+    view = mock_ctx_with_guild.channel.send.call_args[1]['view']
+
+    unauthorized_interaction = MagicMock()
+    unauthorized_interaction.response = MagicMock()
+    unauthorized_interaction.response.send_message = AsyncMock()
+    unauthorized_interaction.user = MagicMock()
+    unauthorized_interaction.user.id = 99999
+
+    result = await view.interaction_check(unauthorized_interaction)
+
+    assert result == False
+    unauthorized_interaction.response.send_message.assert_called_once()
+    call_args = unauthorized_interaction.response.send_message.call_args
+    assert 'slow down pardner, only the person who done what called me can do that' in call_args[0][0]
+    assert call_args[1]['ephemeral'] == True
+
+    bet = cur.execute('SELECT state FROM bet WHERE id = 1').fetchone()
+    assert bet[0] == 'active'
