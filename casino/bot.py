@@ -28,6 +28,14 @@ cur = con.cursor()
 async def on_ready():
   print(f'We have logged in as {bot.user}')
 
+@bot.command(help='test ur luck! remember, taran always loses')
+async def freespins(ctx):
+  if ctx.author == bot.user:
+    return
+  print(ctx.author)
+  cur.execute('UPDATE user SET spins = 10')
+  con.commit()
+
 
 @bot.command(help='test ur luck! remember, taran always loses')
 async def spin(ctx):
@@ -56,22 +64,24 @@ async def spin(ctx):
 
   if bux == 0:
     msg += 'u lost\n'
+  elif bux == 12:
+    msg += 'well howwwdyyyy you hit the **bungo jackpot**! you get **12** bungo bux!\n'
   else:
-    msg += f'u win {bux} bungo bux, congrats high roller!\n'
+    msg += f'u win **{bux}** bungo bux, congrats high roller!\n'
 
   cur.execute('INSERT INTO spins (user_id, winnings) VALUES (?, ?)',
               (user_id, bux))
 
   con.commit()
   if spins > 1:
-    msg += f'come back soon ya hear? you got {spins - 1} spins left!'
+    msg += f'come back soon ya hear? you got **{spins - 1} spins left**!'
   else:
     msg += 'ur all outta spins now champ!'
   await ctx.channel.send(msg)
 
 
 @bot.command(help="introduce urself, pick a name and don't try any funny business")
-async def howdy(ctx, display_name: str | None):
+async def howdy(ctx, display_name: str | None = None):
   if ctx.author == bot.user:
     return
 
@@ -579,7 +589,7 @@ async def wallet(ctx):
     dollars_str = f'-${abs(bungo_dollars)}'
 
   lines.append(f'bungo dollars: {dollars_str}')
-  lines.append(f'bungo bux:     {bungo_bux}')
+  lines.append(f'bungo bux:     ͇{bungo_bux}')
   lines.append(f'spins:         {spins}')
   lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
   lines.append('```')

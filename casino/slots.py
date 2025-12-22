@@ -2,7 +2,7 @@ import random
 
 
 def generate_slot_grid():
-  """Generate a 3x5 grid of symbols ($ or O) with 55% chance of $."""
+  """Generate a 3x5 grid of symbols ($ or O) with 50% chance of $."""
   grid = []
   for _ in range(3):
     row = []
@@ -52,42 +52,34 @@ def format_slot_frame(grid, payout):
   Grid is expected to be a 3x5 list of symbols.
   Payout determines the header decoration.
   """
-  top = '╔═════════════╗'
-  divider1 = '╠═════════════╣'
-  bottom = '╚═════════════╝'
+  top =                 '╔═════════════╗'
+  header =              '║    BUNGO    ║ ◉'
+  divider1 =            '╠═════════════╣ ║'
+  top_row_template =    '║  {} {} {} {} {}  ║ ║'
+  middle_row_template = '╠═ {} {} {} {} {} ═╬═╝'
+  bottom_row_template = '║  {} {} {} {} {}  ║'
+  bottom =              '╚═╦═════════╦═╝'
+  tray =                '  ╚═════════╝  '
 
-  # Special mega jackpot display
-  if payout == 12:
-    header = '║ $$$$$$$$$$$ ║'
-    row_template = '║  {} {} {} {} {}  ║'
-    divider2 = '╠═ {} {} {} {} {} ═╣'
-
-    row1 = row_template.format(*grid[0])
-    row2 = divider2.format(*grid[1])
-    row3 = row_template.format(*grid[2])
+  # Generate header based on payout
+  if payout == 0:
+    header = '║    BUNGO    ║ ◉'
+  elif payout == 1:
+    header = '║ $  BUNGO  $ ║ ◉'
+  elif payout == 2:
+    header = '║ $$ BUNGO $$ ║ ◉'
+  elif payout == 6:
+    header = '║ $$ $$$$$ $$ ║ ◉'
+  elif payout == 12:
+    header = '║ $$$$$$$$$$$ ║ ◉'
   else:
-    # Normal display
-    divider2 = '╠═ {} {} {} {} {} ═╣'
+    # Fallback to default header from above
+    pass
 
-    # Generate header based on payout
-    if payout == 0:
-      header = '║    BUNGO    ║'
-    elif payout == 1:
-      header = '║ $  BUNGO  $ ║'
-    elif payout == 2:
-      header = '║ $$ BUNGO $$ ║'
-    elif payout >= 6:
-      header = '║ $$ $$$$$ $$ ║'
-    else:
-      # Fallback for any other payout values
-      header = '║    BUNGO    ║'
-
-    row_template = '║  {} {} {} {} {}  ║'
-
-    # Format the three rows
-    row1 = row_template.format(*grid[0])
-    row2 = divider2.format(*grid[1])  # Middle row gets special dividers
-    row3 = row_template.format(*grid[2])
+  # Format the three rows
+  row1 = top_row_template.format(*grid[0])
+  row2 = middle_row_template.format(*grid[1])
+  row3 = bottom_row_template.format(*grid[2])
 
   frame = '\n'.join([
     top,
@@ -96,7 +88,8 @@ def format_slot_frame(grid, payout):
     row1,
     row2,
     row3,
-    bottom
+    bottom,
+    tray
   ])
 
   return frame
@@ -117,9 +110,8 @@ def spin_slots():
       ['X', 'X', 'X', 'X', 'X']
     ]
     payout = 12
-    consecutive = 5  # For display purposes
     frame = format_slot_frame(grid, payout)
-    return frame, payout, consecutive
+    return frame, payout
 
   # Normal spin
   grid = generate_slot_grid()
@@ -135,10 +127,10 @@ if __name__ == '__main__':
   print("Testing Bungo's Slot Machine\n")
 
   for i in range(5):
-    frame, payout, consecutive = spin_slots()
+    frame, payout = spin_slots()
     print(frame)
     if payout > 0:
-      print(f'\nWinner! {consecutive} in a row - Payout: {payout}')
+      print(f'\nWinner! Payout: {payout}')
     else:
-      print(f'\nNo win (max consecutive: {consecutive})')
+      print('\nNo win')
     print('\n' + '='*20 + '\n')
