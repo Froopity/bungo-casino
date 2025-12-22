@@ -12,7 +12,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 # Copy application code
-COPY src/ ./src/
+COPY casino/ ./casino/
 COPY migrations/ ./migrations/
 COPY yoyo.ini ./
 COPY docker-entrypoint.sh ./

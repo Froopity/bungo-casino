@@ -7,9 +7,6 @@ services:
       - .env
     volumes:
       # Persist the database
-      - casino-data:/data
+      - ./data:/data
     environment:
       - DATABASE_PATH=/data/casino.db
-
-volumes:
-  casino-data:
