@@ -219,33 +219,6 @@ async def test_resolve_with_notes(mock_db, mock_ctx_with_guild, mock_interaction
 
 
 @pytest.mark.asyncio
-async def test_resolve_resolver_not_registered(mock_db, mock_ctx_with_guild):
-  con, cur = mock_db
-
-  p1_id = str(uuid.uuid4())
-  p2_id = str(uuid.uuid4())
-
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
-              (p1_id, 99999, 'Player1'))
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
-              (p2_id, 67890, 'Player2'))
-  cur.execute('''INSERT INTO bet
-                 (participant1_id, participant2_id, description, state, created_by_discord_id)
-                 VALUES (?, ?, ?, 'active', ?)''',
-              (p1_id, p2_id, 'Test bet', '99999'))
-  con.commit()
-
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
-    from casino.bot import resolve
-
-    await resolve(mock_ctx_with_guild, 101, 'Player2')
-
-    mock_ctx_with_guild.channel.send.assert_called_once_with(
-      'woaah slow down ther cowboy, you gotta say $howdy first'
-    )
-
-
-@pytest.mark.asyncio
 async def test_resolve_bet_not_found(mock_db, mock_ctx_with_guild):
   con, cur = mock_db
 

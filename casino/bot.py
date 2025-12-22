@@ -1,16 +1,17 @@
 import os
+import random
 import sqlite3
 import sys
 import uuid
-import random
 from pathlib import Path
 
 import discord
-from discord.ext import commands
 import dotenv
+from discord.ext import commands
 
+from casino.checks import ignore_bots, is_registered
 from casino.slots import spin_slots
-from casino.utils import is_valid_name, format_ticket_id, parse_ticket_id
+from casino.utils import is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet
 
 random.seed()
 dotenv.load_dotenv()
@@ -24,32 +25,37 @@ db_path = os.getenv('DATABASE_PATH', str((Path(__file__).parent.parent / 'data' 
 con = sqlite3.connect(db_path)
 cur = con.cursor()
 
+
 @bot.event
 async def on_ready():
   print(f'We have logged in as {bot.user}')
 
+
+@bot.event
+async def on_command_error(ctx, error):
+  from casino.checks import NotRegisteredError
+  if isinstance(error, NotRegisteredError):
+    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
+  elif not isinstance(error, commands.CheckFailure):
+    raise error
+
+
 @bot.command(help='test ur luck! remember, taran always loses')
+@ignore_bots
 async def freespins(ctx):
-  if ctx.author == bot.user:
-    return
   print(ctx.author)
   cur.execute('UPDATE user SET spins = 10')
   con.commit()
 
 
 @bot.command(help='test ur luck! remember, taran always loses')
+@ignore_bots
+@is_registered(cur)
 async def spin(ctx):
-  if ctx.author == bot.user:
-    return
-
   gambler = cur.execute(
     'SELECT id, display_name, spins, bungo_bux FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
-
-  if not gambler:
-    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
-    return
 
   user_id, name, spins, bungo_bux = gambler
 
@@ -60,7 +66,8 @@ async def spin(ctx):
   frame, bux = spin_slots()
   msg = f'''```\n{frame}\n```'''
 
-  cur.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?', (spins - 1, bungo_bux + bux, str(ctx.author.id)))
+  cur.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?',
+              (spins - 1, bungo_bux + bux, str(ctx.author.id)))
 
   if bux == 0:
     msg += 'u lost\n'
@@ -81,10 +88,8 @@ async def spin(ctx):
 
 
 @bot.command(help="introduce urself, pick a name and don't try any funny business")
+@ignore_bots
 async def howdy(ctx, display_name: str | None = None):
-  if ctx.author == bot.user:
-    return
-
   existing_user = cur.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
   if existing_user:
     name = existing_user[0]
@@ -123,7 +128,8 @@ async def howdy(ctx, display_name: str | None = None):
     await ctx.channel.send(f'somebody already dang ol using the name {display_name}, get ur own')
     return
 
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)', (str(uuid.uuid4()), ctx.author.id, display_name))
+  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
+              (str(uuid.uuid4()), ctx.author.id, display_name))
   con.commit()
   await ctx.channel.send(f"why howdy {display_name}, welcome to ol' bungo's casino!")
 
@@ -144,11 +150,12 @@ async def help(ctx):
   lines.append('```')
   await ctx.channel.send(f'{'\n'.join(lines)}')
 
-@bot.command(help="place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y'alls wager")
-async def wager(ctx, opponent: str | None = None, *, description: str | None = None):
-  if ctx.author == bot.user:
-    return
 
+@bot.command(
+  help="place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y'alls wager")
+@ignore_bots
+@is_registered(cur)
+async def wager(ctx, opponent: str | None = None, *, description: str | None = None):
   if opponent is None:
     await ctx.channel.send('u gotta pick an opponent champ!')
     return
@@ -160,10 +167,6 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
     'SELECT id, display_name FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
-
-  if not creator:
-    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
-    return
 
   creator_id, creator_name = creator
 
@@ -225,12 +228,13 @@ class ResolutionConfirmView(discord.ui.View):
 
     cur.execute(
       '''UPDATE bet
-         SET state = 'resolved',
-             resolved_at = CURRENT_TIMESTAMP,
+         SET state                  = 'resolved',
+             resolved_at            = CURRENT_TIMESTAMP,
              resolved_by_discord_id = ?,
-             winner_id = ?,
-             resolution_notes = ?
-         WHERE id = ? AND state = 'active' ''',
+             winner_id              = ?,
+             resolution_notes       = ?
+         WHERE id = ?
+           AND state = 'active' ''',
       (self.resolver_discord_id, self.winner_id, self.resolution_notes, self.bet_id)
     )
     cur.execute('UPDATE user SET spins = spins + 1, bungo_dollars = bungo_dollars + 1 WHERE id = ?', (self.winner_id,))
@@ -281,7 +285,8 @@ class CancellationConfirmView(discord.ui.View):
     cur.execute(
       '''UPDATE bet
          SET state = 'cancelled'
-         WHERE id = ? AND state = 'active' ''',
+         WHERE id = ?
+           AND state = 'active' ''',
       (self.bet_id,)
     )
     con.commit()
@@ -316,91 +321,15 @@ class CancellationConfirmView(discord.ui.View):
     )
 
 
-async def parse_winner_for_bet(ctx, winner_arg, participant1_id, participant2_id, cur):
-  winner_id = None
-  winner_discord_id = None
-
-  if ctx.message.mentions:
-    mentioned_user = ctx.message.mentions[0]
-    winner_discord_id = str(mentioned_user.id)
-
-    winner_user = cur.execute(
-      'SELECT id FROM user WHERE discord_id = ?',
-      (winner_discord_id,)
-    ).fetchone()
-
-    if winner_user:
-      winner_id = winner_user[0]
-  else:
-    winner_user = cur.execute(
-      'SELECT id, discord_id FROM user WHERE LOWER(display_name) = LOWER(?)',
-      (winner_arg,)
-    ).fetchone()
-
-    if winner_user:
-      winner_id = winner_user[0]
-      winner_discord_id = winner_user[1]
-    else:
-      matching_members = [
-        m for m in ctx.guild.members
-        if m.display_name.lower() == winner_arg.lower() or m.name.lower() == winner_arg.lower()
-      ]
-
-      if matching_members:
-        member = matching_members[0]
-        winner_discord_id = str(member.id)
-
-        winner_user = cur.execute(
-          'SELECT id FROM user WHERE discord_id = ?',
-          (winner_discord_id,)
-        ).fetchone()
-
-        if winner_user:
-          winner_id = winner_user[0]
-
-  if not winner_id or winner_id not in (participant1_id, participant2_id):
-    p1_name = cur.execute(
-      'SELECT display_name FROM user WHERE id = ?',
-      (participant1_id,)
-    ).fetchone()[0]
-
-    p2_name = cur.execute(
-      'SELECT display_name FROM user WHERE id = ?',
-      (participant2_id,)
-    ).fetchone()[0]
-
-    return None, f'they aint a pard of this, its between {p1_name} and {p2_name}', None
-
-  all_participant_names = cur.execute(
-    'SELECT id, display_name FROM user WHERE id IN (?, ?)',
-    (participant1_id, participant2_id)
-  ).fetchall()
-
-  winner_name = None
-  loser_name = None
-
-  for pid, pname in all_participant_names:
-    if pid == winner_id:
-      winner_name = pname
-    else:
-      loser_name = pname
-
-  return winner_id, winner_name, loser_name
-
-
-@bot.command(help="bet's all done? well then, better let me know who won! show me ur ticket and ur winner, and i'll put it up on that thar leadrbord")
+@bot.command(
+  help="bet's all done? well then, better let me know who won! show me ur ticket and ur winner, and i'll put it up on that thar leadrbord")
+@ignore_bots
+@is_registered(cur)
 async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
-  if ctx.author == bot.user:
-    return
-
   resolver = cur.execute(
     'SELECT id FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
-
-  if not resolver:
-    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
-    return
 
   resolver_id = resolver[0]
 
@@ -410,18 +339,17 @@ async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
     await ctx.channel.send("that don't look like a proper ticket numbr")
     return
 
-  bet = cur.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
+  bet = cur.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?', (bet_id,)).fetchone()
 
   if not bet:
     await ctx.channel.send("i ain't know nothin bout that ticket numbr")
     return
 
-  if bet[5] != 'active':
+  participant1_id, participant2_id, description, state = bet
+
+  if state != 'active':
     await ctx.channel.send("cmon champ, that wager's long gone by now")
     return
-
-  participant1_id = bet[1]
-  participant2_id = bet[2]
 
   if resolver_id not in (participant1_id, participant2_id):
     await ctx.channel.send("slow down pardner, you ain't a part of that there wager")
@@ -434,7 +362,6 @@ async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
     return
 
   winner_name = result
-  bet_description = bet[3]
 
   resolution_notes = None
   if notes:
@@ -457,7 +384,7 @@ async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
   )
 
   confirmation_msg = (
-    f'wager: {bet_description}\n'
+    f'wager: {description}\n'
     f'between: {winner_name} and {loser_name}\n\n'
     f'r ya sure {winner_name} wins?'
   )
@@ -465,19 +392,15 @@ async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
   await ctx.channel.send(confirmation_msg, view=view)
 
 
-@bot.command(help="bet not work out? just let me know the ticket number and i'll take it offa my books", aliases=['rules'])
+@bot.command(help="bet not work out? just let me know the ticket number and i'll take it offa my books",
+             aliases=['rules'])
+@ignore_bots
+@is_registered(cur)
 async def cancel(ctx, display_bet_id: int):
-  if ctx.author == bot.user:
-    return
-
   canceller = cur.execute(
     'SELECT id FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
-
-  if not canceller:
-    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
-    return
 
   canceller_id = canceller[0]
 
@@ -512,36 +435,31 @@ async def cancel(ctx, display_bet_id: int):
   await ctx.channel.send('r ya sure?', view=view)
 
 
-@bot.command(help="forgot ur ticket number eh? that's okay, i got 'em all up here, just ask and i'll give ya the full list of active bets")
+@bot.command(
+  help="forgot ur ticket number eh? that's okay, i got 'em all up here, just ask and i'll give ya the full list of active bets")
+@ignore_bots
+@is_registered(cur)
 async def tickets(ctx):
-  if ctx.author == bot.user:
-    return
-
   user = cur.execute(
     'SELECT id, display_name FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
 
-  if not user:
-    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
-    return
-
   user_id = user[0]
 
   query = '''
-    SELECT
-      b.id,
-      b.description,
-      u1.display_name as p1_name,
-      u2.display_name as p2_name,
-      b.created_at
-    FROM bet b
-    JOIN user u1 ON b.participant1_id = u1.id
-    JOIN user u2 ON b.participant2_id = u2.id
-    WHERE (b.participant1_id = ? OR b.participant2_id = ?)
-      AND b.state = 'active'
-    ORDER BY b.created_at DESC
-  '''
+          SELECT b.id,
+                 b.description,
+                 u1.display_name as p1_name,
+                 u2.display_name as p2_name,
+                 b.created_at
+          FROM bet b
+                   JOIN user u1 ON b.participant1_id = u1.id
+                   JOIN user u2 ON b.participant2_id = u2.id
+          WHERE (b.participant1_id = ? OR b.participant2_id = ?)
+            AND b.state = 'active'
+          ORDER BY b.created_at DESC \
+          '''
 
   tickets = cur.execute(query, (user_id, user_id)).fetchall()
 
@@ -566,18 +484,13 @@ async def tickets(ctx):
 
 
 @bot.command(help='check ur holdings - bungo dollars, bungo bux, and spins')
+@ignore_bots
+@is_registered(cur)
 async def wallet(ctx):
-  if ctx.author == bot.user:
-    return
-
   user = cur.execute(
     'SELECT display_name, bungo_dollars, bungo_bux, spins FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
-
-  if not user:
-    await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
-    return
 
   display_name, bungo_dollars, bungo_bux, spins = user
 
@@ -598,28 +511,22 @@ async def wallet(ctx):
 
 
 @bot.command(aliases=['leaderboard'], help="i can tell ya who's the better better outta u 'n ur buds")
+@ignore_bots
 async def leadrbord(ctx):
-  if ctx.author == bot.user:
-    return
-
   query = '''
-    WITH user_stats AS (
-      SELECT
-        u.display_name,
-        u.bungo_dollars AS balance,
-        SUM(CASE WHEN b.winner_id = u.id THEN 1 ELSE 0 END) AS wins,
-        SUM(CASE WHEN b.winner_id != u.id THEN 1 ELSE 0 END) AS losses
-      FROM user u
-      LEFT JOIN bet b ON (b.participant1_id = u.id OR b.participant2_id = u.id)
-                      AND b.state = 'resolved'
-      GROUP BY u.id, u.display_name, u.bungo_dollars
-      HAVING COUNT(CASE WHEN b.state = 'resolved' THEN 1 END) > 0
-    )
-    SELECT display_name, balance, wins, losses
-    FROM user_stats
-    ORDER BY balance DESC, wins DESC
-    LIMIT 10
-  '''
+          WITH user_stats AS (SELECT u.display_name,
+                                     u.bungo_dollars                                      AS balance,
+                                     SUM(CASE WHEN b.winner_id = u.id THEN 1 ELSE 0 END)  AS wins,
+                                     SUM(CASE WHEN b.winner_id != u.id THEN 1 ELSE 0 END) AS losses
+                              FROM user u
+                                       LEFT JOIN bet b ON (b.participant1_id = u.id OR b.participant2_id = u.id)
+                                  AND b.state = 'resolved'
+                              GROUP BY u.id, u.display_name, u.bungo_dollars
+                              HAVING COUNT(CASE WHEN b.state = 'resolved' THEN 1 END) > 0)
+          SELECT display_name, balance, wins, losses
+          FROM user_stats
+          ORDER BY balance DESC, wins DESC LIMIT 10 \
+          '''
 
   results = cur.execute(query).fetchall()
 
@@ -651,9 +558,9 @@ async def leadrbord(ctx):
 
 
 if __name__ == '__main__':
-    bot_token = os.getenv('DISCORD_BOT_TOKEN')
-    if bot_token is None:
-      print('Discord API token not found')
-      sys.exit(1)
+  bot_token = os.getenv('DISCORD_BOT_TOKEN')
+  if bot_token is None:
+    print('Discord API token not found')
+    sys.exit(1)
 
-    bot.run(bot_token)
+  bot.run(bot_token)

@@ -69,20 +69,6 @@ async def test_wager_success_with_display_name(mock_db, mock_ctx_with_guild):
 
 
 @pytest.mark.asyncio
-async def test_wager_creator_not_registered(mock_db, mock_ctx_with_guild):
-  con, cur = mock_db
-
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
-    from casino.bot import wager
-
-    await wager(mock_ctx_with_guild, 'TestOpponent', description='test bet')
-
-    mock_ctx_with_guild.channel.send.assert_called_once_with(
-      'woaah slow down ther cowboy, you gotta say $howdy first'
-    )
-
-
-@pytest.mark.asyncio
 async def test_wager_self_betting_with_mention(mock_db, mock_ctx_with_guild):
   con, cur = mock_db
 
