@@ -607,15 +607,15 @@ async def leadrbord(ctx):
       SELECT
         u.display_name,
         u.bungo_dollars AS balance,
-        SUM(CASE WHEN b.winner_id = u.id THEN 1 ELSE 0 END) AS wins
+        SUM(CASE WHEN b.winner_id = u.id THEN 1 ELSE 0 END) AS wins,
+        SUM(CASE WHEN b.winner_id != u.id THEN 1 ELSE 0 END) AS losses
       FROM user u
       LEFT JOIN bet b ON (b.participant1_id = u.id OR b.participant2_id = u.id)
                       AND b.state = 'resolved'
-                      AND b.winner_id = u.id
       GROUP BY u.id, u.display_name, u.bungo_dollars
       HAVING COUNT(CASE WHEN b.state = 'resolved' THEN 1 END) > 0
     )
-    SELECT display_name, balance, wins
+    SELECT display_name, balance, wins, losses
     FROM user_stats
     ORDER BY balance DESC, wins DESC
     LIMIT 10
@@ -629,7 +629,7 @@ async def leadrbord(ctx):
 
   lines = ['```', "big bungo's leadrbord", '━━━━━━━━━━━━━━━━━━━━━━━']
 
-  for idx, (name, balance, wins) in enumerate(results, 1):
+  for idx, (name, balance, wins, losses) in enumerate(results, 1):
     display_name = name[:15] + '...' if len(name) > 15 else name
 
     if balance >= 0:
@@ -640,9 +640,9 @@ async def leadrbord(ctx):
     rank_str = f'#{idx}'.ljust(4)
     name_str = display_name.ljust(18)
     balance_str = balance_str.rjust(6)
-    wins_str = f'({wins}W)'
+    winloss_str = f'({wins}W/{losses}L)'
 
-    lines.append(f'{rank_str}{name_str}{balance_str}  {wins_str}')
+    lines.append(f'{rank_str}{name_str}{balance_str}  {winloss_str}')
 
   lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
   lines.append('```')
