@@ -26,7 +26,7 @@ cur = con.cursor()
 
 @bot.event
 async def on_ready():
-    print(f'We have logged in as {bot.user}')
+  print(f'We have logged in as {bot.user}')
 
 
 @bot.command(help='test ur luck! remember, taran always loses')
@@ -70,78 +70,78 @@ async def spin(ctx):
   await ctx.channel.send(msg)
 
 
-@bot.command(help='introduce urself, pick a name and don\'t try any funny business')
+@bot.command(help="introduce urself, pick a name and don't try any funny business")
 async def howdy(ctx, display_name: str | None):
-    if ctx.author == bot.user:
-        return
+  if ctx.author == bot.user:
+    return
 
-    existing_user = cur.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
-    if existing_user:
-        name = existing_user[0]
-        if display_name is None:
-          await ctx.channel.send(f'howdy {name}, try placing a bet!')
-        else:
-          await ctx.channel.send(f'u already got a name: {name}')
-        return
+  existing_user = cur.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
+  if existing_user:
+    name = existing_user[0]
+    if display_name is None:
+      await ctx.channel.send(f'howdy {name}, try placing a bet!')
+    else:
+      await ctx.channel.send(f'u already got a name: {name}')
+    return
 
-    if display_name is None or len(display_name) == 0:
-        await ctx.channel.send('u gotta tell me ur name! say "$howdy <urname>"')
-        return
+  if display_name is None or len(display_name) == 0:
+    await ctx.channel.send('u gotta tell me ur name! say "$howdy <urname>"')
+    return
 
-    if len(display_name) > 32:
-        await ctx.channel.send('i aint gonna remember all that, pick a shorter name')
-        return
+  if len(display_name) > 32:
+    await ctx.channel.send('i aint gonna remember all that, pick a shorter name')
+    return
 
-    if display_name == '@bungo' or display_name == '<@1450042419964809328>' or display_name in str(bot.user.id):
-        await ctx.channel.send('fuckoffyoucunt')
-        return
+  if display_name == '@bungo' or display_name == '<@1450042419964809328>' or display_name in str(bot.user.id):
+    await ctx.channel.send('fuckoffyoucunt')
+    return
 
-    if display_name.startswith('@'):
-        await ctx.channel.send('think ur fucken cheeky huh')
-        return
+  if display_name.startswith('@'):
+    await ctx.channel.send('think ur fucken cheeky huh')
+    return
 
-    if not display_name[0].isalnum():
-        await ctx.channel.send('it gets weird when u start ur name with a symbol, try somethin else')
-        return
+  if not display_name[0].isalnum():
+    await ctx.channel.send('it gets weird when u start ur name with a symbol, try somethin else')
+    return
 
-    if not is_valid_name(display_name):
-        await ctx.channel.send('nice try bingus, normal werds only in my casino (alphanumeric and !@#$%)')
-        return
+  if not is_valid_name(display_name):
+    await ctx.channel.send('nice try bingus, normal werds only in my casino (alphanumeric and !@#$%)')
+    return
 
-    name_taken = cur.execute('SELECT 1 FROM user WHERE display_name = ?', (display_name,)).fetchone()
-    if name_taken:
-        await ctx.channel.send(f'somebody already dang ol using the name {display_name}, get ur own')
-        return
+  name_taken = cur.execute('SELECT 1 FROM user WHERE display_name = ?', (display_name,)).fetchone()
+  if name_taken:
+    await ctx.channel.send(f'somebody already dang ol using the name {display_name}, get ur own')
+    return
 
-    cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)', (str(uuid.uuid4()), ctx.author.id, display_name))
-    con.commit()
-    await ctx.channel.send(f"why howdy {display_name}, welcome to ol' bungo's casino!")
+  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)', (str(uuid.uuid4()), ctx.author.id, display_name))
+  con.commit()
+  await ctx.channel.send(f"why howdy {display_name}, welcome to ol' bungo's casino!")
 
 
 @bot.command(help='already figured that one out, huh? helps, duh')
 async def help(ctx):
   lines = [
-      '```'
-      "new around here pardner? let's help get ya situated real fast like:",
-      "i don't know how's it works were ur from, but here? we all start our conversations with '$'",
-      "introduce yourself, if'n you ain't already, through $howdy, and then get tryin' with these other commands:\n"
+    '```'
+    "new around here pardner? let's help get ya situated real fast like:",
+    "i don't know how's it works were ur from, but here? we all start our conversations with '$'",
+    "introduce yourself, if'n you ain't already, through $howdy, and then get tryin' with these other commands:\n"
   ]
   for command in bot.commands:
-      if command.name != 'howdy':
-        lines.append(f'{command.name}')
-        lines.append(f' - {command.help}\n')
+    if command.name != 'howdy':
+      lines.append(f'{command.name}')
+      lines.append(f' - {command.help}\n')
 
   lines.append('```')
   await ctx.channel.send(f'{'\n'.join(lines)}')
 
-@bot.command(help='place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y\'alls wager')
+@bot.command(help="place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y'alls wager")
 async def wager(ctx, opponent: str | None = None, *, description: str | None = None):
   if ctx.author == bot.user:
     return
 
   if opponent is None:
-      await ctx.channel.send('u gotta pick an opponent champ!')
-      return
+    await ctx.channel.send('u gotta pick an opponent champ!')
+    return
   if description is None:
     await ctx.channel.send('u gotta describe ur wager')
     return
@@ -179,8 +179,8 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
 
     opponent_id = opponent_user[0]
   else:
-      await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
-      return
+    await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
+    return
 
   cur.execute(
     '''INSERT INTO bet
@@ -378,7 +378,7 @@ async def parse_winner_for_bet(ctx, winner_arg, participant1_id, participant2_id
   return winner_id, winner_name, loser_name
 
 
-@bot.command(help='bet\'s all done? well then, better let me know who won! show me ur ticket and ur winner, and i\'ll put it up on that thar leadrbord')
+@bot.command(help="bet's all done? well then, better let me know who won! show me ur ticket and ur winner, and i'll put it up on that thar leadrbord")
 async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
   if ctx.author == bot.user:
     return
@@ -447,15 +447,15 @@ async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
   )
 
   confirmation_msg = (
-    f"wager: {bet_description}\n"
-    f"between: {winner_name} and {loser_name}\n\n"
-    f"r ya sure {winner_name} wins?"
+    f'wager: {bet_description}\n'
+    f'between: {winner_name} and {loser_name}\n\n'
+    f'r ya sure {winner_name} wins?'
   )
 
   await ctx.channel.send(confirmation_msg, view=view)
 
 
-@bot.command(help='bet not work out? just let me know the ticket number and i\'ll take it offa my books', aliases=['rules'])
+@bot.command(help="bet not work out? just let me know the ticket number and i'll take it offa my books", aliases=['rules'])
 async def cancel(ctx, display_bet_id: int):
   if ctx.author == bot.user:
     return
@@ -502,7 +502,7 @@ async def cancel(ctx, display_bet_id: int):
   await ctx.channel.send('r ya sure?', view=view)
 
 
-@bot.command(help='forgot ur ticket number eh? that\'s okay, i got \'em all up here, just ask and i\'ll give ya the full list of active bets')
+@bot.command(help="forgot ur ticket number eh? that's okay, i got 'em all up here, just ask and i'll give ya the full list of active bets")
 async def tickets(ctx):
   if ctx.author == bot.user:
     return
@@ -587,7 +587,7 @@ async def wallet(ctx):
   await ctx.channel.send('\n'.join(lines))
 
 
-@bot.command(aliases=['leaderboard'], help='i can tell ya who\'s the better better outta u \'n ur buds')
+@bot.command(aliases=['leaderboard'], help="i can tell ya who's the better better outta u 'n ur buds")
 async def leadrbord(ctx):
   if ctx.author == bot.user:
     return
