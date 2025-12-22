@@ -10,7 +10,7 @@ from discord.ext import commands
 import dotenv
 
 from casino.slots import spin_slots
-
+from casino.utils import is_valid_name, format_ticket_id, parse_ticket_id
 
 random.seed()
 dotenv.load_dotenv()
@@ -33,7 +33,7 @@ async def on_ready():
 async def spin(ctx):
   if ctx.author == bot.user:
     return
-  
+
   gambler = cur.execute(
     'SELECT id, display_name, spins, bungo_bux FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
@@ -71,15 +71,17 @@ async def spin(ctx):
 
 
 @bot.command(help='introduce urself, pick a name and don\'t try any funny business')
-async def howdy(ctx, display_name: str):
+async def howdy(ctx, display_name: str | None):
     if ctx.author == bot.user:
         return
 
-    print(display_name)
-
     existing_user = cur.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
     if existing_user:
-        await ctx.channel.send(f'u already got a name: {existing_user[0]}')
+        name = existing_user[0]
+        if display_name is None:
+          await ctx.channel.send(f'howdy {name}, try placing a bet!')
+        else:
+          await ctx.channel.send(f'u already got a name: {name}')
         return
 
     if display_name is None or len(display_name) == 0:
@@ -115,30 +117,14 @@ async def howdy(ctx, display_name: str):
     con.commit()
     await ctx.channel.send(f"why howdy {display_name}, welcome to ol' bungo's casino!")
 
-def is_valid_name(text):
-    allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%')
-    return all(char in allowed for char in text)
-
-def format_ticket_id(db_id: int) -> int:
-    """Convert database ID to display ticket number.
-    Examples: 5 -> 105, 15 -> 115, 123 -> 1123"""
-    return int(f"1{db_id:02d}")
-
-def parse_ticket_id(display_id: int) -> int:
-    """Convert display ticket number back to database ID.
-    Examples: 105 -> 5, 115 -> 15, 1123 -> 123"""
-    id_str = str(display_id)
-    if not id_str.startswith('1') or len(id_str) < 3:
-        raise ValueError(f"Invalid ticket number format: {display_id}")
-    return int(id_str[1:])
 
 @bot.command(help='already figured that one out, huh? helps, duh')
 async def help(ctx):
   lines = [
       '```'
-      'new around here pardner? let\'s help get ya situated real fast like:',
-      'i don\'t know how\'s it works were ur from, but here? we all start our conversations with \'$\'',
-      'introduce yourself, if\'n you ain\'t already, through $howdy, and then get tryin\' with these other commands:\n'
+      "new around here pardner? let's help get ya situated real fast like:",
+      "i don't know how's it works were ur from, but here? we all start our conversations with '$'",
+      "introduce yourself, if'n you ain't already, through $howdy, and then get tryin' with these other commands:\n"
   ]
   for command in bot.commands:
       if command.name != 'howdy':
@@ -149,8 +135,15 @@ async def help(ctx):
   await ctx.channel.send(f'{'\n'.join(lines)}')
 
 @bot.command(help='place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y\'alls wager')
-async def wager(ctx, opponent: str, *, description: str):
+async def wager(ctx, opponent: str | None = None, *, description: str | None = None):
   if ctx.author == bot.user:
+    return
+
+  if opponent is None:
+      await ctx.channel.send('u gotta pick an opponent champ!')
+      return
+  if description is None:
+    await ctx.channel.send('u gotta describe ur wager')
     return
 
   creator = cur.execute(
@@ -185,37 +178,9 @@ async def wager(ctx, opponent: str, *, description: str):
       return
 
     opponent_id = opponent_user[0]
-
   else:
-    if opponent.lower() == creator_name.lower():
-      await ctx.channel.send('you cant place a wager on urself!')
+      await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
       return
-
-    opponent_user = cur.execute(
-      'SELECT id, discord_id FROM user WHERE display_name = ?',
-      (opponent,)
-    ).fetchone()
-
-    if opponent_user:
-      guild_member = ctx.guild.get_member(int(opponent_user[1]))
-
-      if not guild_member:
-        await ctx.channel.send(f"hold on hold on, ur pardner has to say $howdy to ol' bungo first")
-        return
-
-      opponent_id = opponent_user[0]
-    else:
-      matching_members = [
-        m for m in ctx.guild.members
-        if m.display_name.lower() == opponent.lower() or m.name.lower() == opponent.lower()
-      ]
-
-      if matching_members:
-        await ctx.channel.send(f"hold on hold on, ur pardner has to say $howdy to ol' bungo first")
-        return
-      else:
-        await ctx.channel.send(f"i ain't never heard o' no one with that name")
-        return
 
   cur.execute(
     '''INSERT INTO bet
@@ -225,10 +190,7 @@ async def wager(ctx, opponent: str, *, description: str):
   )
   con.commit()
 
-  bet_id = cur.lastrowid
-  display_ticket_id = format_ticket_id(bet_id)
-
-  await ctx.channel.send(f'alrighty your ticket is {display_ticket_id} good luck champ')
+  await ctx.channel.send(f'alrighty your ticket is {format_ticket_id(cur.lastrowid)} good luck champ')
 
 
 class ResolutionConfirmView(discord.ui.View):
