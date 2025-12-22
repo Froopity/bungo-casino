@@ -6,7 +6,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_wager_success_with_mention(mock_db, mock_ctx_with_guild):
+async def test_wager_success_with_mention(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -23,7 +23,7 @@ async def test_wager_success_with_mention(mock_db, mock_ctx_with_guild):
   mentioned_user.display_name = 'TestOpponent'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, '@TestOpponent', description='I can juggle 5 balls')
@@ -42,7 +42,7 @@ async def test_wager_success_with_mention(mock_db, mock_ctx_with_guild):
 
 
 @pytest.mark.asyncio
-async def test_wager_success_with_display_name(mock_db, mock_ctx_with_guild):
+async def test_wager_success_with_display_name(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -54,7 +54,12 @@ async def test_wager_success_with_display_name(mock_db, mock_ctx_with_guild):
               (opponent_id, 67890, 'TestOpponent'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'TestOpponent'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
+
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestOpponent', description='I can eat 10 hot dogs')
@@ -69,7 +74,7 @@ async def test_wager_success_with_display_name(mock_db, mock_ctx_with_guild):
 
 
 @pytest.mark.asyncio
-async def test_wager_self_betting_with_mention(mock_db, mock_ctx_with_guild):
+async def test_wager_self_betting_with_mention(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -82,7 +87,7 @@ async def test_wager_self_betting_with_mention(mock_db, mock_ctx_with_guild):
   mentioned_user.display_name = 'TestCreator'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, '@TestCreator', description='test bet')
@@ -93,7 +98,7 @@ async def test_wager_self_betting_with_mention(mock_db, mock_ctx_with_guild):
 
 
 @pytest.mark.asyncio
-async def test_wager_self_betting_with_display_name(mock_db, mock_ctx_with_guild):
+async def test_wager_self_betting_with_display_name(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -101,7 +106,12 @@ async def test_wager_self_betting_with_display_name(mock_db, mock_ctx_with_guild
               (creator_id, 12345, 'TestCreator'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  mentioned_user = MagicMock()
+  mentioned_user.id = 12345
+  mentioned_user.display_name = 'TestCreator'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
+
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestCreator', description='test bet')
@@ -112,7 +122,7 @@ async def test_wager_self_betting_with_display_name(mock_db, mock_ctx_with_guild
 
 
 @pytest.mark.asyncio
-async def test_wager_opponent_not_registered_mention(mock_db, mock_ctx_with_guild):
+async def test_wager_opponent_not_registered_mention(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -125,7 +135,7 @@ async def test_wager_opponent_not_registered_mention(mock_db, mock_ctx_with_guil
   mentioned_user.display_name = 'TestOpponent'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, '@TestOpponent', description='test bet')
@@ -136,7 +146,7 @@ async def test_wager_opponent_not_registered_mention(mock_db, mock_ctx_with_guil
 
 
 @pytest.mark.asyncio
-async def test_wager_opponent_in_guild_not_registered(mock_db, mock_ctx_with_guild):
+async def test_wager_opponent_in_guild_not_registered(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -144,18 +154,23 @@ async def test_wager_opponent_in_guild_not_registered(mock_db, mock_ctx_with_gui
               (creator_id, 12345, 'TestCreator'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'testopponent'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
+
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'testopponent', description='test bet')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
-      'hold on hold on, ur pardner has to say $howdy to ol\' bungo first'
+      'hold on hold on, testopponent has to say $howdy to ol\' bungo first'
     )
 
 
 @pytest.mark.asyncio
-async def test_wager_opponent_not_in_guild(mock_db, mock_ctx_with_guild):
+async def test_wager_opponent_not_in_guild(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -163,18 +178,23 @@ async def test_wager_opponent_not_in_guild(mock_db, mock_ctx_with_guild):
               (creator_id, 12345, 'TestCreator'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  mentioned_user = MagicMock()
+  mentioned_user.id = 99999
+  mentioned_user.display_name = 'NoSuchPerson'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
+
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'NoSuchPerson', description='test bet')
 
     mock_ctx_with_guild.channel.send.assert_called_once_with(
-      'i ain\'t never heard o\' no one with that name'
+      'hold on hold on, NoSuchPerson has to say $howdy to ol\' bungo first'
     )
 
 
 @pytest.mark.asyncio
-async def test_wager_description_too_long(mock_db, mock_ctx_with_guild):
+async def test_wager_description_too_long(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -188,7 +208,7 @@ async def test_wager_description_too_long(mock_db, mock_ctx_with_guild):
 
   long_description = 'x' * 281
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestOpponent', description=long_description)
@@ -199,7 +219,7 @@ async def test_wager_description_too_long(mock_db, mock_ctx_with_guild):
 
 
 @pytest.mark.asyncio
-async def test_wager_bet_created_in_database(mock_db, mock_ctx_with_guild):
+async def test_wager_bet_created_in_database(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -211,7 +231,12 @@ async def test_wager_bet_created_in_database(mock_db, mock_ctx_with_guild):
               (opponent_id, 67890, 'TestOpponent'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'TestOpponent'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
+
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestOpponent', description='Test Description')
@@ -227,7 +252,7 @@ async def test_wager_bet_created_in_database(mock_db, mock_ctx_with_guild):
 
 
 @pytest.mark.asyncio
-async def test_wager_bet_id_returned(mock_db, mock_ctx_with_guild):
+async def test_wager_bet_id_returned(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -239,7 +264,12 @@ async def test_wager_bet_id_returned(mock_db, mock_ctx_with_guild):
               (opponent_id, 67890, 'TestOpponent'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'TestOpponent'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
+
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestOpponent', description='First bet')
@@ -249,7 +279,7 @@ async def test_wager_bet_id_returned(mock_db, mock_ctx_with_guild):
 
 
 @pytest.mark.asyncio
-async def test_wager_opponent_registered_not_in_guild(mock_db, mock_ctx_with_guild):
+async def test_wager_opponent_registered_not_in_guild(mock_db, mock_ctx_with_guild, mock_bot):
   con, cur = mock_db
 
   creator_id = str(uuid.uuid4())
@@ -261,11 +291,21 @@ async def test_wager_opponent_registered_not_in_guild(mock_db, mock_ctx_with_gui
               (opponent_id, 99999, 'GoneUser'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  mentioned_user = MagicMock()
+  mentioned_user.id = 99999
+  mentioned_user.display_name = 'GoneUser'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
+
+  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'GoneUser', description='test bet')
 
-    mock_ctx_with_guild.channel.send.assert_called_once_with(
-      'hold on hold on, ur pardner has to say $howdy to ol\' bungo first'
-    )
+    mock_ctx_with_guild.channel.send.assert_called_once()
+    call_args = mock_ctx_with_guild.channel.send.call_args[0][0]
+    assert 'alrighty your ticket is' in call_args
+
+    bet = cur.execute('SELECT * FROM bet WHERE id = 1').fetchone()
+    assert bet is not None
+    assert bet[1] == creator_id
+    assert bet[2] == opponent_id

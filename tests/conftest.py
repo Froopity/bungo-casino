@@ -81,3 +81,11 @@ def mock_interaction():
   interaction.user = MagicMock()
   interaction.user.id = 12345
   return interaction
+
+
+@pytest.fixture
+def mock_bot():
+  bot = MagicMock()
+  bot.user = MagicMock()
+  bot.user.id = 999999
+  return bot

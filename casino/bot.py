@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from casino.checks import ignore_bots, is_registered
 from casino.slots import spin_slots
-from casino.utils import is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet
+from casino.utils import is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet, name_is_bungo
 
 random.seed()
 dotenv.load_dotenv()
@@ -38,14 +38,6 @@ async def on_command_error(ctx, error):
     await ctx.channel.send('woaah slow down ther cowboy, you gotta say $howdy first')
   elif not isinstance(error, commands.CheckFailure):
     raise error
-
-
-@bot.command(help='test ur luck! remember, taran always loses')
-@ignore_bots
-async def freespins(ctx):
-  print(ctx.author)
-  cur.execute('UPDATE user SET spins = 10')
-  con.commit()
 
 
 @bot.command(help='test ur luck! remember, taran always loses')
@@ -99,29 +91,20 @@ async def howdy(ctx, display_name: str | None = None):
       await ctx.channel.send(f'u already got a name: {name}')
     return
 
-  if display_name is None or len(display_name) == 0:
-    await ctx.channel.send('u gotta tell me ur name! say "$howdy <urname>"')
-    return
+  validations = [
+    (lambda x: x is None or len(x) == 0, 'u gotta tell me ur name! say "$howdy <urname>"'),
+    (lambda x: len(x) > 32, 'i aint gonna remember all that, pick a shorter name'),
+    (lambda x: name_is_bungo(x, bot.user.id), 'fuckoffyoucunt'),
+    (lambda x: x == '@everyone', 'think ur fucken cheeky huh'),
+    (lambda x: not x[0].isalnum(), 'it gets weird when u start ur name with a symbol, try somethin else'),
+    (lambda x: not is_valid_name(x),
+     'nice try bingus, normal werds only in my casino (alphanumeric and !@#$%)')
+  ]
 
-  if len(display_name) > 32:
-    await ctx.channel.send('i aint gonna remember all that, pick a shorter name')
-    return
-
-  if display_name == '@bungo' or display_name == '<@1450042419964809328>' or display_name in str(bot.user.id):
-    await ctx.channel.send('fuckoffyoucunt')
-    return
-
-  if display_name.startswith('@'):
-    await ctx.channel.send('think ur fucken cheeky huh')
-    return
-
-  if not display_name[0].isalnum():
-    await ctx.channel.send('it gets weird when u start ur name with a symbol, try somethin else')
-    return
-
-  if not is_valid_name(display_name):
-    await ctx.channel.send('nice try bingus, normal werds only in my casino (alphanumeric and !@#$%)')
-    return
+  for validation, msg in validations:
+    if validation(display_name):
+      await ctx.channel.send(msg)
+      return
 
   name_taken = cur.execute('SELECT 1 FROM user WHERE display_name = ?', (display_name,)).fetchone()
   if name_taken:
@@ -163,6 +146,9 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
     await ctx.channel.send('u gotta describe ur wager')
     return
 
+  if name_is_bungo(opponent, bot.user.id):
+    await ctx.channel.send('u dont wanna play against the house bucko, bungo always wins')
+
   creator = cur.execute(
     'SELECT id, display_name FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
@@ -174,71 +160,26 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
     await ctx.channel.send("hold on partner that description's too long, keep it under 280 characters")
     return
 
-  if ctx.message.mentions:
-    mentioned_user = ctx.message.mentions[0]
+  if not ctx.message.mentions:
+    await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
+    return
 
-    if mentioned_user.id == ctx.author.id:
-      await ctx.channel.send('you cant place a wager on urself!')
-      return
+  mentioned_user = ctx.message.mentions[0]
 
-    opponent_user = cur.execute(
-      'SELECT id FROM user WHERE discord_id = ?',
-      (str(mentioned_user.id),)
-    ).fetchone()
+  if mentioned_user.id == ctx.author.id:
+    await ctx.channel.send('you cant place a wager on urself!')
+    return
 
-    if not opponent_user:
-      await ctx.channel.send(f"hold on hold on, {mentioned_user.display_name} has to say $howdy to ol' bungo first")
-      return
+  opponent_user = cur.execute(
+    'SELECT id FROM user WHERE discord_id = ?',
+    (str(mentioned_user.id),)
+  ).fetchone()
 
-    opponent_id = opponent_user[0]
-  else:
-    opponent_user = cur.execute(
-      'SELECT id, discord_id FROM user WHERE LOWER(display_name) = LOWER(?)',
-      (opponent,)
-    ).fetchone()
+  if not opponent_user:
+    await ctx.channel.send(f"hold on hold on, {mentioned_user.display_name} has to say $howdy to ol' bungo first")
+    return
 
-    if opponent_user:
-      opponent_id, opponent_discord_id = opponent_user
-
-      if str(ctx.author.id) == opponent_discord_id:
-        await ctx.channel.send('you cant place a wager on urself!')
-        return
-
-      if ctx.guild:
-        opponent_in_guild = ctx.guild.get_member(int(opponent_discord_id))
-        if not opponent_in_guild:
-          await ctx.channel.send('hold on hold on, ur pardner has to say $howdy to ol\' bungo first')
-          return
-    else:
-      if ctx.guild:
-        matching_members = [
-          m for m in ctx.guild.members
-          if m.display_name.lower() == opponent.lower() or m.name.lower() == opponent.lower()
-        ]
-
-        if matching_members:
-          member = matching_members[0]
-
-          if member.id == ctx.author.id:
-            await ctx.channel.send('you cant place a wager on urself!')
-            return
-
-          opponent_user = cur.execute(
-            'SELECT id FROM user WHERE discord_id = ?',
-            (str(member.id),)
-          ).fetchone()
-
-          if opponent_user:
-            opponent_id = opponent_user[0]
-          else:
-            await ctx.channel.send('hold on hold on, ur pardner has to say $howdy to ol\' bungo first')
-            return
-        else:
-          await ctx.channel.send('i ain\'t never heard o\' no one with that name')
-          return
-      else:
-        await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
-        return
+  opponent_id = opponent_user[0]
 
   cur.execute(
     '''INSERT INTO bet

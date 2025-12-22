@@ -86,3 +86,9 @@ async def parse_winner_for_bet(ctx, winner_arg, participant1_id, participant2_id
       loser_name = pname
 
   return winner_id, winner_name, loser_name
+
+
+def name_is_bungo(name: str, bot_id) -> bool:
+  return (name == '@bungo'
+          or name == '<@1450042419964809328>'
+          or name in str(bot_id))
