@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from casino.checks import ignore_bots, is_registered
 from casino.slots import spin_slots
-from casino.utils import is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet, name_is_bungo
+from casino.utils import is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet, name_is_bungo, calculate_global_debts, generate_debt_graph_image
 
 random.seed()
 dotenv.load_dotenv()
@@ -560,6 +560,30 @@ async def leadrbord(ctx):
   lines.append('```')
 
   await ctx.channel.send('\n'.join(lines))
+
+
+@bot.command(help="see who owes who in a fancy graph")
+@ignore_bots
+@is_registered(cur)
+async def debts(ctx):
+  debt_edges = calculate_global_debts(cur)
+
+  if not debt_edges:
+    await ctx.channel.send("ain't nobody got debts yet pardner")
+    return
+
+  image_path = generate_debt_graph_image(debt_edges)
+
+  if image_path is None:
+    await ctx.channel.send('somethin went wrong generatin the graph pardner')
+    return
+
+  try:
+    await ctx.channel.send(file=discord.File(image_path))
+  finally:
+    import os
+    if image_path and os.path.exists(image_path):
+      os.unlink(image_path)
 
 
 if __name__ == '__main__':
