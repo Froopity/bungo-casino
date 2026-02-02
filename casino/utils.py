@@ -194,5 +194,6 @@ def generate_debt_graph_image(debt_edges):
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
       urllib.request.urlretrieve(url, tmp.name)
       return tmp.name
-  except Exception:
+  except Exception as e:
+    print(e)
     return None
