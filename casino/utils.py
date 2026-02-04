@@ -1,3 +1,10 @@
+from dataclasses import dataclass
+from sqlite3 import Cursor
+from discord.abc import User
+
+from discord.ext.commands.bot import Bot
+from exceptions import BotNotAuthenticatedError, BungoError, UnknownEntityError
+
 def is_valid_name(text):
   allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%')
   return all(char in allowed for char in text)
@@ -18,80 +25,74 @@ def parse_ticket_id(display_id: int) -> int:
   return int(id_str[1:])
 
 
-async def parse_winner_for_bet(ctx, winner_arg, participant1_id, participant2_id, cur):
-  winner_id = None
+def get_user_id(user: User, cur: Cursor) -> str:
+  discord_id = str(user.id)
 
-  if ctx.message.mentions:
-    mentioned_user = ctx.message.mentions[0]
-    winner_discord_id = str(mentioned_user.id)
+  user_id = cur.execute(
+    'SELECT id FROM user WHERE discord_id = ?',
+    (discord_id,)
+  ).fetchone()
 
-    winner_user = cur.execute(
-      'SELECT id FROM user WHERE discord_id = ?',
-      (winner_discord_id,)
-    ).fetchone()
+  if not user_id:
+    raise UnknownEntityError(user.name)
 
-    if winner_user:
-      winner_id = winner_user[0]
-  else:
-    winner_user = cur.execute(
-      'SELECT id, discord_id FROM user WHERE LOWER(display_name) = LOWER(?)',
-      (winner_arg,)
-    ).fetchone()
+  return user_id
 
-    if winner_user:
-      winner_id = winner_user[0]
-    else:
-      matching_members = [
-        m for m in ctx.guild.members
-        if m.display_name.lower() == winner_arg.lower() or m.name.lower() == winner_arg.lower()
-      ]
 
-      if matching_members:
-        member = matching_members[0]
-        winner_discord_id = str(member.id)
+@dataclass(frozen=True)
+class BetOutcome:
+  winner_id: str
+  winner_name: str
+  loser_id: str
+  loser_name: str
 
-        winner_user = cur.execute(
-          'SELECT id FROM user WHERE discord_id = ?',
-          (winner_discord_id,)
-        ).fetchone()
 
-        if winner_user:
-          winner_id = winner_user[0]
-
-  if not winner_id or winner_id not in (participant1_id, participant2_id):
-    p1_name = cur.execute(
-      'SELECT display_name FROM user WHERE id = ?',
-      (participant1_id,)
-    ).fetchone()[0]
-
-    p2_name = cur.execute(
-      'SELECT display_name FROM user WHERE id = ?',
-      (participant2_id,)
-    ).fetchone()[0]
-
-    return None, f'they aint a pard of this, its between {p1_name} and {p2_name}', None
-
-  all_participant_names = cur.execute(
-    'SELECT id, display_name FROM user WHERE id IN (?, ?)',
-    (participant1_id, participant2_id)
+async def parse_winner_for_bet(elected_winner_id: str, participant1_id, participant2_id, cur):
+  """
+  Determine winner and loser and return their bungo names.
+  """
+  results = cur.execute(
+      'SELECT id, display_name FROM user WHERE id IN (?, ?)',
+      (participant1_id, participant2_id)
   ).fetchall()
 
-  winner_name = None
-  loser_name = None
+  user_map = dict(results)
 
-  for pid, pname in all_participant_names:
-    if pid == winner_id:
-      winner_name = pname
-    else:
-      loser_name = pname
+  try:
+    name1 = user_map[participant1_id]
+    name2 = user_map[participant2_id]
+  except KeyError as e:
+    raise UnknownEntityError(str(e)) from e
 
-  return winner_id, winner_name, loser_name
+  if elected_winner_id not in (participant1_id, participant2_id):
+    raise BungoError(f'they aint a pard of this, its between {name1} and {name2}')
+
+  if participant1_id == elected_winner_id:
+    return BetOutcome(
+      winner_id=participant1_id,
+      winner_name=name1,
+      loser_id=participant2_id,
+      loser_name=name2
+    )
+
+  return BetOutcome(
+    winner_id=participant2_id,
+    winner_name=name2,
+    loser_id=participant1_id,
+    loser_name=name1
+  )
 
 
 def name_is_bungo(name: str, bot_id) -> bool:
   return (name == '@bungo'
           or name == '<@1450042419964809328>'
           or name in str(bot_id))
+
+
+def get_bot_id(bot: Bot) -> int:
+    if bot.user is None:
+        raise BotNotAuthenticatedError("bungo ain't logged in")
+    return bot.user.id
 
 
 def calculate_global_debts(cur):
@@ -139,10 +140,10 @@ def calculate_net_debts(debt_edges):
 
 
 def generate_debt_graph_image(debt_edges):
-  import tempfile
-  import urllib.request
-  import urllib.parse
   import base64
+  import tempfile
+  import urllib.parse
+  import urllib.request
 
   net_debts = calculate_net_debts(debt_edges)
 
@@ -166,7 +167,7 @@ def generate_debt_graph_image(debt_edges):
       for var_key, var_val in val.items():
         frontmatter += f"    {var_key}: '{var_val}'\n"
     else:
-      frontmatter += f"  {key}: {val}\n"
+      frontmatter += f'  {key}: {val}\n'
   frontmatter += '---'
 
   mermaid_lines = [frontmatter, 'graph LR']

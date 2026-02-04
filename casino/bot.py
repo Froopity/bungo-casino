@@ -6,12 +6,14 @@ import uuid
 from pathlib import Path
 
 import discord
+from discord.ext.commands.context import Context
 import dotenv
 from discord.ext import commands
 
 from casino.checks import ignore_bots, is_registered
+from casino.exceptions import BungoError, SqlError, UnknownEntityError
 from casino.slots import spin_slots
-from casino.utils import is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet, name_is_bungo, calculate_global_debts, generate_debt_graph_image
+from casino.utils import get_bot_id, get_user_id, is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet, name_is_bungo, calculate_global_debts, generate_debt_graph_image
 
 random.seed()
 dotenv.load_dotenv()
@@ -94,7 +96,7 @@ async def howdy(ctx, display_name: str | None = None):
   validations = [
     (lambda x: x is None or len(x) == 0, 'u gotta tell me ur name! say "$howdy <urname>"'),
     (lambda x: len(x) > 32, 'i aint gonna remember all that, pick a shorter name'),
-    (lambda x: name_is_bungo(x, bot.user.id), 'fuckoffyoucunt'),
+    (lambda x: name_is_bungo(x, get_bot_id(bot)), 'fuckoffyoucunt'),
     (lambda x: x == '@everyone', 'think ur fucken cheeky huh'),
     (lambda x: not x[0].isalnum(), 'it gets weird when u start ur name with a symbol, try somethin else'),
     (lambda x: not is_valid_name(x),
@@ -146,7 +148,7 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
     await ctx.channel.send('u gotta describe ur wager')
     return
 
-  if name_is_bungo(opponent, bot.user.id):
+  if name_is_bungo(opponent, get_bot_id(bot)):
     await ctx.channel.send('u dont wanna play against the house bucko, bungo always wins')
 
   creator = cur.execute(
@@ -189,7 +191,11 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
   )
   con.commit()
 
-  await ctx.channel.send(f'alrighty your ticket is {format_ticket_id(cur.lastrowid)} good luck champ')
+  if cur.lastrowid is None:
+    raise SqlError('Ticket creation did not return ticket ID')
+  ticket_num = cur.lastrowid
+
+  await ctx.channel.send(f'alrighty your ticket is {format_ticket_id(ticket_num)} good luck champ')
 
 
 class ResolutionConfirmView(discord.ui.View):
@@ -214,8 +220,7 @@ class ResolutionConfirmView(discord.ui.View):
 
   @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
   async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-    for item in self.children:
-      item.disabled = True
+    self._disable_buttons()
 
     # Get loser_id to update their bungo dollars
     bet = cur.execute('SELECT participant1_id, participant2_id FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
@@ -257,13 +262,17 @@ class ResolutionConfirmView(discord.ui.View):
 
   @discord.ui.button(label='nevrmind', style=discord.ButtonStyle.grey)
   async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-    for item in self.children:
-      item.disabled = True
+    self._disable_buttons()
 
     await interaction.response.edit_message(
       content='alright pardner, resolution cancelled',
       view=self
     )
+
+  def _disable_buttons(self):
+    for item in self.children:
+        if isinstance(item, discord.ui.Button):
+            item.disabled = True
 
 
 class CancellationConfirmView(discord.ui.View):
@@ -283,8 +292,7 @@ class CancellationConfirmView(discord.ui.View):
 
   @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
   async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-    for item in self.children:
-      item.disabled = True
+    self._disable_buttons()
 
     cur.execute(
       '''UPDATE bet
@@ -316,82 +324,83 @@ class CancellationConfirmView(discord.ui.View):
 
   @discord.ui.button(label='nevrmind', style=discord.ButtonStyle.grey)
   async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-    for item in self.children:
-      item.disabled = True
+    self._disable_buttons()
 
     await interaction.response.edit_message(
       content='alright pardner, cancellation cancelled',
       view=self
     )
 
+  def _disable_buttons(self):
+    for item in self.children:
+        if isinstance(item, discord.ui.Button):
+            item.disabled = True
+
 
 @bot.command(
   help="bet's all done? well then, better let me know who won! show me ur ticket and ur winner, and i'll put it up on that thar leadrbord")
 @ignore_bots
 @is_registered(cur)
-async def resolve(ctx, display_bet_id: int, winner: str, *, notes: str = ''):
+async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str = ''):
+  # Note: We ignore the user parameter value and just fetch it straight from the mentions.
+
   resolver = cur.execute(
     'SELECT id FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
 
   resolver_id = resolver[0]
-
   try:
-    bet_id = parse_ticket_id(display_bet_id)
-  except ValueError:
-    await ctx.channel.send("that don't look like a proper ticket numbr")
+    try:
+      bet_id = parse_ticket_id(display_bet_id)
+    except ValueError:
+      raise BungoError("that don't look like a proper ticket numbr")
+
+    bet = cur.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?',
+                      (bet_id,)).fetchone()
+
+    if not bet:
+      raise BungoError("i ain't know nothin bout that ticket numbr")
+
+    participant1_id, participant2_id, description, state = bet
+
+    if state != 'active':
+      raise BungoError("cmon champ, that wager's long gone by now")
+
+    if resolver_id not in (participant1_id, participant2_id):
+      raise BungoError("slow down pardner, you ain't a part of that there wager")
+
+    if not ctx.message.mentions:
+      raise BungoError('u gotta @mention the winner!')
+
+    if len(notes) > 280:
+      raise BungoError('keep them notes under 280 characters pardner')
+
+    mentioned_user_id = get_user_id(ctx.message.mentions[0], cur)
+
+    bet_outcome = await parse_winner_for_bet(mentioned_user_id, participant1_id, participant2_id, cur)
+  except BungoError as e:
+    print(f'Encountered Bungo error, returning message: {str(e)}')
+    await ctx.channel.send(str(e))
     return
-
-  bet = cur.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?',
-                    (bet_id,)).fetchone()
-
-  if not bet:
-    await ctx.channel.send("i ain't know nothin bout that ticket numbr")
+  except UnknownEntityError as e:
+    print(f'Could not find entity: {str(e)}')
+    await ctx.channel.send(f"i don know who {str(e)} is! have they said $howdy to ol' bungo?")
     return
-
-  participant1_id, participant2_id, description, state = bet
-
-  if state != 'active':
-    await ctx.channel.send("cmon champ, that wager's long gone by now")
-    return
-
-  if resolver_id not in (participant1_id, participant2_id):
-    await ctx.channel.send("slow down pardner, you ain't a part of that there wager")
-    return
-
-  winner_id, result, loser_name = await parse_winner_for_bet(ctx, winner, participant1_id, participant2_id, cur)
-
-  if not winner_id:
-    await ctx.channel.send(result)
-    return
-
-  winner_name = result
-
-  resolution_notes = None
-  if notes:
-    if notes.startswith('notes:'):
-      resolution_notes = notes[6:].strip()
-    else:
-      resolution_notes = notes
-
-    if len(resolution_notes) > 280:
-      await ctx.channel.send('keep them notes under 280 characters pardner')
-      return
 
   view = ResolutionConfirmView(
     bet_id=bet_id,
-    winner_id=winner_id,
-    winner_name=winner_name,
-    loser_name=loser_name,
+    winner_id=bet_outcome.winner_id,
+    winner_name=bet_outcome.winner_name,
+    loser_name=bet_outcome.loser_name,
     resolver_discord_id=str(ctx.author.id),
-    resolution_notes=resolution_notes
+    resolution_notes=None if not notes else notes
   )
 
   confirmation_msg = (
     f'wager: {description}\n'
-    f'between: {winner_name} and {loser_name}\n\n'
-    f'r ya sure {winner_name} wins?'
+    f'between: {bet_outcome.winner_name} and {bet_outcome.loser_name}\n\n'
+    f'r ya sure {bet_outcome.winner_name} wins?'
   )
 
   await ctx.channel.send(confirmation_msg, view=view)
@@ -562,7 +571,7 @@ async def leadrbord(ctx):
   await ctx.channel.send('\n'.join(lines))
 
 
-@bot.command(help="see who owes who in a fancy graph")
+@bot.command(help='see who owes whom in a fancy graph')
 @ignore_bots
 @is_registered(cur)
 async def debts(ctx):
