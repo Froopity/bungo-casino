@@ -10,8 +10,10 @@ from discord.ext.commands.context import Context
 import dotenv
 from discord.ext import commands
 
+from casino import sqlite_adapters
 from casino.checks import ignore_bots, is_registered
 from casino.exceptions import BungoError, SqlError, UnknownEntityError
+from casino.model.user import User
 from casino.slots import spin_slots
 from casino.utils import get_bot_id, get_user_id, is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet, name_is_bungo, calculate_global_debts, generate_debt_graph_image
 
@@ -23,8 +25,9 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='$', intents=intents, help_command=None)
 
+sqlite_adapters.register_adapters()
 db_path = os.getenv('DATABASE_PATH', str((Path(__file__).parent.parent / 'data' / 'casino.db').resolve()))
-con = sqlite3.connect(db_path)
+con = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
 cur = con.cursor()
 
 
@@ -46,22 +49,20 @@ async def on_command_error(ctx, error):
 @ignore_bots
 @is_registered(cur)
 async def spin(ctx):
-  gambler = cur.execute(
-    'SELECT id, display_name, spins, bungo_bux FROM user WHERE discord_id = ?',
+  gambler = User.from_row(cur.execute(
+    'SELECT * FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
-  ).fetchone()
+  ).fetchone())
 
-  user_id, name, spins, bungo_bux = gambler
-
-  if spins == 0:
-    await ctx.channel.send(f'sorry {name}, but ur outta spins. come back when u get one over on ur buds')
+  if gambler.spins == 0:
+    await ctx.channel.send(f'sorry {gambler.display_name}, but ur outta spins. come back when u get one over on ur buds')
     return
 
   frame, bux = spin_slots()
   msg = f'''```\n{frame}\n```'''
 
   cur.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?',
-              (spins - 1, bungo_bux + bux, str(ctx.author.id)))
+              (gambler.spins - 1, gambler.bungo_bux + bux, str(ctx.author.id)))
 
   if bux == 0:
     msg += 'u lost\n'
@@ -71,11 +72,11 @@ async def spin(ctx):
     msg += f'u win **{bux}** bungo bux, congrats high roller!\n'
 
   cur.execute('INSERT INTO spins (user_id, winnings) VALUES (?, ?)',
-              (user_id, bux))
+              (gambler.id, bux))
 
   con.commit()
-  if spins > 1:
-    msg += f'come back soon ya hear? you got **{spins - 1} spins left**!'
+  if gambler.spins > 1:
+    msg += f'come back soon ya hear? you got **{gambler.spins - 1} spins left**!'
   else:
     msg += 'ur all outta spins now champ!'
   await ctx.channel.send(msg)
@@ -485,10 +486,9 @@ async def tickets(ctx):
 
   for ticket_id, description, p1_name, p2_name, created_at in tickets:
     display_ticket_id = format_ticket_id(ticket_id)
-    created_date = created_at.split()[0] if created_at else ''
     lines.append(f'#{display_ticket_id}: {description}')
     lines.append(f'  between {p1_name} and {p2_name}')
-    lines.append(f'  created: {created_date}')
+    lines.append(f"  created: {created_at.strftime('%d-%m-%y')}")
     lines.append('')
 
   lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
