@@ -3,7 +3,7 @@ from sqlite3 import Cursor
 from discord.abc import User
 
 from discord.ext.commands.bot import Bot
-from exceptions import BotNotAuthenticatedError, BungoError, UnknownEntityError
+from casino.exceptions import BotNotAuthenticatedError, BungoError, UnknownEntityError
 
 def is_valid_name(text):
   allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%')
