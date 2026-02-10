@@ -1,4 +1,3 @@
-import sqlite3
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -52,42 +51,6 @@ async def test_resolve_success_with_mention(mock_db, mock_ctx_with_guild, mock_i
 
 
 @pytest.mark.asyncio
-async def test_resolve_success_with_display_name(mock_db, mock_ctx_with_guild, mock_interaction):
-  con, cur = mock_db
-
-  p1_id = str(uuid.uuid4())
-  p2_id = str(uuid.uuid4())
-
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
-              (p1_id, 12345, 'Player1'))
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
-              (p2_id, 67890, 'Player2'))
-  cur.execute('''INSERT INTO bet
-                 (participant1_id, participant2_id, description, state, created_by_discord_id)
-                 VALUES (?, ?, ?, 'active', ?)''',
-              (p1_id, p2_id, 'Test bet', '12345'))
-  con.commit()
-
-  mock_ctx_with_guild.message.mentions = []
-
-  with patch('casino.bot.con', con):
-    from casino.bot import resolve
-
-    await resolve(mock_ctx_with_guild, 101, 'Player2')
-
-    mock_ctx_with_guild.channel.send.assert_called_once()
-    call_args = mock_ctx_with_guild.channel.send.call_args
-    assert 'r ya sure Player2 wins?' in call_args[0][0]
-
-    view = call_args[1]['view']
-    await view.confirm.callback(mock_interaction)
-
-    bet = cur.execute('SELECT * FROM bet WHERE id = 1').fetchone()
-    assert bet[5] == 'resolved'
-    assert bet[10] == p2_id
-
-
-@pytest.mark.asyncio
 async def test_resolve_participant1_wins(mock_db, mock_ctx_with_guild, mock_interaction):
   con, cur = mock_db
 
@@ -104,7 +67,10 @@ async def test_resolve_participant1_wins(mock_db, mock_ctx_with_guild, mock_inte
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  mock_ctx_with_guild.message.mentions = []
+  mentioned_user = MagicMock()
+  mentioned_user.id = 12345
+  mentioned_user.display_name = 'Player1'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
 
   with patch('casino.bot.con', con):
     from casino.bot import resolve
@@ -140,8 +106,11 @@ async def test_resolve_either_participant_can_resolve(mock_db, mock_ctx_with_gui
   mock_ctx_participant2.author.id = 67890
   mock_ctx_participant2.channel = MagicMock()
   mock_ctx_participant2.channel.send = AsyncMock()
+  mentioned_user = MagicMock()
+  mentioned_user.id = 12345
+  mentioned_user.display_name = 'Player1'
   mock_ctx_participant2.message = MagicMock()
-  mock_ctx_participant2.message.mentions = []
+  mock_ctx_participant2.message.mentions = [mentioned_user]
   mock_ctx_participant2.guild = mock_ctx_with_guild.guild
 
   with patch('casino.bot.con', con):
@@ -170,7 +139,10 @@ async def test_resolve_confirmation_button_nevrmind(mock_db, mock_ctx_with_guild
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  mock_ctx_with_guild.message.mentions = []
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'Player2'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
 
   with patch('casino.bot.con', con):
     from casino.bot import resolve
@@ -203,7 +175,10 @@ async def test_resolve_with_notes(mock_db, mock_ctx_with_guild, mock_interaction
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  mock_ctx_with_guild.message.mentions = []
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'Player2'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
 
   with patch('casino.bot.con', con):
     from casino.bot import resolve
@@ -215,7 +190,7 @@ async def test_resolve_with_notes(mock_db, mock_ctx_with_guild, mock_interaction
 
     bet = cur.execute('SELECT * FROM bet WHERE id = 1').fetchone()
     assert bet[5] == 'resolved'
-    assert bet[11] == 'player2 actually did it'
+    assert bet[11] == 'notes: player2 actually did it'
 
 
 @pytest.mark.asyncio
@@ -342,7 +317,10 @@ async def test_resolve_winner_not_participant(mock_db, mock_ctx_with_guild):
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  mock_ctx_with_guild.message.mentions = []
+  mentioned_user = MagicMock()
+  mentioned_user.id = 11111
+  mentioned_user.display_name = 'Player3'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
 
   with patch('casino.bot.con', con):
     from casino.bot import resolve
@@ -370,6 +348,11 @@ async def test_resolve_notes_too_long(mock_db, mock_ctx_with_guild):
                  VALUES (?, ?, ?, 'active', ?)''',
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
+
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'Player2'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
 
   long_notes = 'notes: ' + 'x' * 281
 
@@ -400,7 +383,10 @@ async def test_resolve_case_insensitive_display_name(mock_db, mock_ctx_with_guil
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  mock_ctx_with_guild.message.mentions = []
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'Player2'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
 
   with patch('casino.bot.con', con):
     from casino.bot import resolve
@@ -428,7 +414,10 @@ async def test_resolve_database_fields_populated(mock_db, mock_ctx_with_guild, m
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  mock_ctx_with_guild.message.mentions = []
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'Player2'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
 
   with patch('casino.bot.con', con):
     from casino.bot import resolve
@@ -443,7 +432,7 @@ async def test_resolve_database_fields_populated(mock_db, mock_ctx_with_guild, m
     assert bet[8] is not None
     assert bet[9] == '12345'
     assert bet[10] == p2_id
-    assert bet[11] == 'test notes'
+    assert bet[11] == 'notes: test notes'
 
 
 @pytest.mark.asyncio
@@ -463,7 +452,10 @@ async def test_resolve_unauthorized_button_click(mock_db, mock_ctx_with_guild, m
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  mock_ctx_with_guild.message.mentions = []
+  mentioned_user = MagicMock()
+  mentioned_user.id = 67890
+  mentioned_user.display_name = 'Player2'
+  mock_ctx_with_guild.message.mentions = [mentioned_user]
 
   with patch('casino.bot.con', con):
     from casino.bot import resolve

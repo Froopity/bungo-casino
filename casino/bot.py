@@ -13,9 +13,11 @@ from discord.ext import commands
 from casino import sqlite_adapters
 from casino.checks import ignore_bots, is_registered
 from casino.exceptions import BungoError, SqlError, UnknownEntityError
+from casino.model import user
 from casino.model.user import User
 from casino.slots import spin_slots
-from casino.utils import get_bot_id, get_user_id, is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet, name_is_bungo, calculate_global_debts, generate_debt_graph_image
+from casino.utils import get_bot_id, is_valid_name, format_ticket_id, parse_ticket_id, find_winner, name_is_bungo, calculate_global_debts, generate_debt_graph_image
+from casino.typing import guards
 
 random.seed()
 dotenv.load_dotenv()
@@ -273,7 +275,7 @@ class ResolutionConfirmView(discord.ui.View):
 
   def _disable_buttons(self):
     for item in self.children:
-        if isinstance(item, discord.ui.Button):
+        if guards.is_button(item):
             item.disabled = True
 
 
@@ -335,7 +337,7 @@ class CancellationConfirmView(discord.ui.View):
 
   def _disable_buttons(self):
     for item in self.children:
-        if isinstance(item, discord.ui.Button):
+        if guards.is_button(item):
             item.disabled = True
 
 
@@ -343,8 +345,8 @@ class CancellationConfirmView(discord.ui.View):
   help="bet's all done? well then, better let me know who won! show me ur ticket and ur winner, and i'll put it up on that thar leadrbord")
 @ignore_bots
 @is_registered(con)
-async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str = ''):
-  # Note: We ignore the user parameter value and just fetch it straight from the mentions.
+async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes: str = ''):
+  # Note: We ignore the winner_name value and just fetch it straight from the mentions.
 
   resolver = con.execute(
     'SELECT id FROM user WHERE discord_id = ?',
@@ -355,8 +357,8 @@ async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str 
   try:
     try:
       bet_id = parse_ticket_id(display_bet_id)
-    except ValueError:
-      raise BungoError("that don't look like a proper ticket numbr")
+    except ValueError as e:
+      raise BungoError("that don't look like a proper ticket numbr") from e
 
     bet = con.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?',
                       (bet_id,)).fetchone()
@@ -375,12 +377,17 @@ async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str 
     if not ctx.message.mentions:
       raise BungoError('u gotta @mention the winner!')
 
+    participants = user.get_users_by_id([participant1_id, participant2_id], con)
+
+    participant1 = participants[participant1_id]
+    participant2 = participants[participant2_id]
+    mentioned_user = user.get_discord_user(ctx.message.mentions[0], con)
+
+    if mentioned_user.id not in (participant1.id, participant2.id):
+      raise BungoError(f'they aint a pard of this, its between {participant1.display_name} and {participant2.display_name}')
+
     if len(notes) > 280:
       raise BungoError('keep them notes under 280 characters pardner')
-
-    mentioned_user_id = get_user_id(ctx.message.mentions[0], con)
-
-    bet_outcome = await parse_winner_for_bet(mentioned_user_id, participant1_id, participant2_id, con)
   except BungoError as e:
     print(f'Encountered Bungo error, returning message: {str(e)}')
     await ctx.channel.send(str(e))
@@ -390,19 +397,21 @@ async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str 
     await ctx.channel.send(f"i don know who {str(e)} is! have they said $howdy to ol' bungo?")
     return
 
+  winner, loser = find_winner(mentioned_user, participant1, participant2)
+
   view = ResolutionConfirmView(
     bet_id=bet_id,
-    winner_id=bet_outcome.winner_id,
-    winner_name=bet_outcome.winner_name,
-    loser_name=bet_outcome.loser_name,
+    winner_id=winner.id,
+    winner_name=winner.display_name,
+    loser_name=loser.display_name,
     resolver_discord_id=str(ctx.author.id),
     resolution_notes=None if not notes else notes
   )
 
   confirmation_msg = (
     f'wager: {description}\n'
-    f'between: {bet_outcome.winner_name} and {bet_outcome.loser_name}\n\n'
-    f'r ya sure {bet_outcome.winner_name} wins?'
+    f'between: {winner.display_name} and {loser.display_name}\n\n'
+    f'r ya sure {winner.display_name} wins?'
   )
 
   await ctx.channel.send(confirmation_msg, view=view)
@@ -601,5 +610,5 @@ if __name__ == '__main__':
   if bot_token is None:
     print('Discord API token not found')
     sys.exit(1)
-
-  bot.run(bot_token)
+  else:
+    bot.run(bot_token)
