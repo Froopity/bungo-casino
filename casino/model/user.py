@@ -1,6 +1,6 @@
 from __future__ import annotations
 from discord import Member
-from sqlite3 import Connection, Row
+from sqlite3 import Connection
 
 from datetime import datetime
 from dataclasses import dataclass

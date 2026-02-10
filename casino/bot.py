@@ -1,5 +1,5 @@
 from sqlite3 import Cursor
-from typing import Callable, Tuple
+from typing import Callable
 import os
 import random
 import sqlite3
@@ -19,7 +19,8 @@ from casino.model import user
 from casino.model.user import User
 from casino.slots import spin_slots
 from casino.utils import get_bot_id, is_valid_name, format_ticket_id, parse_ticket_id, find_winner, name_is_bungo, calculate_global_debts, generate_debt_graph_image
-from casino.typing import guards
+from casino.views.cancellation_confirm import CancellationConfirmView
+from casino.views.resolution_confirm import ResolutionConfirmView
 
 random.seed()
 dotenv.load_dotenv()
@@ -191,147 +192,6 @@ async def wager(ctx: Context, opponent_name: str | None = None, *, description: 
   await ctx.channel.send(f'alrighty your ticket is {format_ticket_id(ticket_num)} good luck champ')
 
 
-class ResolutionConfirmView(discord.ui.View):
-  def __init__(self, bet_id: int, winner_id: str, winner_name: str, loser_name: str,
-               resolver_discord_id: str, resolution_notes: str | None = None):
-    super().__init__(timeout=60.0)
-    self.bet_id = bet_id
-    self.winner_id = winner_id
-    self.winner_name = winner_name
-    self.loser_name = loser_name
-    self.resolver_discord_id = resolver_discord_id
-    self.resolution_notes = resolution_notes
-
-  async def interaction_check(self, interaction: discord.Interaction) -> bool:
-    if str(interaction.user.id) != self.resolver_discord_id:
-      await interaction.response.send_message(
-        'slow down pardner, only the person who done what called me can do that',
-        ephemeral=True
-      )
-      return False
-    return True
-
-  @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
-  async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-    self._disable_buttons()
-
-    # Get loser_id to update their bungo dollars
-    bet = con.execute('SELECT participant1_id, participant2_id FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
-    loser_id = bet[0] if bet[1] == self.winner_id else bet[1]
-
-    cur = con.cursor()
-
-    cur.execute(
-      '''UPDATE bet
-         SET state                  = 'resolved',
-             resolved_at            = CURRENT_TIMESTAMP,
-             resolved_by_discord_id = ?,
-             winner_id              = ?,
-             resolution_notes       = ?
-         WHERE id = ?
-           AND state = 'active' ''',
-      (self.resolver_discord_id, self.winner_id, self.resolution_notes, self.bet_id)
-    )
-    cur.execute('UPDATE user SET spins = spins + 1, bungo_dollars = bungo_dollars + 1 WHERE id = ?', (self.winner_id,))
-    cur.execute('UPDATE user SET bungo_dollars = bungo_dollars - 1 WHERE id = ?', (loser_id,))
-    con.commit()
-
-    if cur.rowcount == 0:
-      bet = con.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
-      if bet and bet[0] != 'active':
-        await interaction.response.edit_message(
-          content="cmon champ, that wager's long gone by now",
-          view=self
-        )
-      else:
-        await interaction.response.edit_message(
-          content='somethin went wrong there pardner',
-          view=self
-        )
-      return
-
-    await interaction.response.edit_message(
-      content=f'congrertulatiorns {self.winner_name}, betrr luck next time {self.loser_name}',
-      view=self
-    )
-
-  @discord.ui.button(label='nevrmind', style=discord.ButtonStyle.grey)
-  async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-    self._disable_buttons()
-
-    await interaction.response.edit_message(
-      content='alright pardner, resolution cancelled',
-      view=self
-    )
-
-  def _disable_buttons(self):
-    for item in self.children:
-        if guards.is_button(item):
-            item.disabled = True
-
-
-class CancellationConfirmView(discord.ui.View):
-  def __init__(self, bet_id: int, canceller_discord_id: str):
-    super().__init__(timeout=60.0)
-    self.bet_id = bet_id
-    self.canceller_discord_id = canceller_discord_id
-
-  async def interaction_check(self, interaction: discord.Interaction) -> bool:
-    if str(interaction.user.id) != self.canceller_discord_id:
-      await interaction.response.send_message(
-        'slow down pardner, only the person who done what called me can do that',
-        ephemeral=True
-      )
-      return False
-    return True
-
-  @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
-  async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-    self._disable_buttons()
-
-    cur = con.execute(
-      '''UPDATE bet
-         SET state = 'cancelled'
-         WHERE id = ?
-           AND state = 'active' ''',
-      (self.bet_id,)
-    )
-    con.commit()
-
-    if cur.rowcount == 0:
-      bet = con.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
-      if bet and bet[0] != 'active':
-        await interaction.response.edit_message(
-          content="cmon champ, that wager's long gone by now",
-          view=self
-        )
-      else:
-        await interaction.response.edit_message(
-          content='somethin went wrong there pardner',
-          view=self
-        )
-      return
-
-    await interaction.response.edit_message(
-      content='ah well',
-      view=self
-    )
-
-  @discord.ui.button(label='nevrmind', style=discord.ButtonStyle.grey)
-  async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-    self._disable_buttons()
-
-    await interaction.response.edit_message(
-      content='alright pardner, cancellation cancelled',
-      view=self
-    )
-
-  def _disable_buttons(self):
-    for item in self.children:
-        if guards.is_button(item):
-            item.disabled = True
-
-
 @bot.command(
   help="bet's all done? well then, better let me know who won! show me ur ticket and ur winner, and i'll put it up on that thar leadrbord")
 @ignore_bots
@@ -391,6 +251,7 @@ async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes:
   winner, loser = find_winner(mentioned_user, participant1, participant2)
 
   view = ResolutionConfirmView(
+    con=con,
     bet_id=bet_id,
     winner_id=winner.id,
     winner_name=winner.display_name,
@@ -444,6 +305,7 @@ async def cancel(ctx, display_bet_id: int):
     return
 
   view = CancellationConfirmView(
+    con=con,
     bet_id=bet_id,
     canceller_discord_id=str(ctx.author.id)
   )
