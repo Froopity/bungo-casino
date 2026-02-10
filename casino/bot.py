@@ -1,4 +1,4 @@
-from sqlite3 import Cursor
+from sqlite3 import Cursor, Row
 from typing import Callable
 import os
 import random
@@ -52,11 +52,8 @@ async def on_command_error(ctx, error):
 @bot.command(help='test ur luck! remember, taran always loses')
 @ignore_bots
 @is_registered(con)
-async def spin(ctx):
-  gambler = User.from_row(con.execute(
-    'SELECT * FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone())
+async def spin(ctx: Context):
+  gambler: User = user.from_discord_user(ctx.author, con)
 
   if gambler.spins == 0:
     await ctx.channel.send(f'sorry {gambler.display_name}, but ur outta spins. come back when u get one over on ur buds')
@@ -199,12 +196,8 @@ async def wager(ctx: Context, opponent_name: str | None = None, *, description: 
 async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes: str = ''):
   # Note: We ignore the winner_name value and just fetch it straight from the mentions.
 
-  resolver = con.execute(
-    'SELECT id FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
+  resolver = user.from_discord_user(ctx.author, con)
 
-  resolver_id = resolver[0]
   try:
     try:
       bet_id = parse_ticket_id(display_bet_id)
@@ -222,7 +215,7 @@ async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes:
     if state != 'active':
       raise BungoError("cmon champ, that wager's long gone by now")
 
-    if resolver_id not in (participant1_id, participant2_id):
+    if resolver.id not in (participant1_id, participant2_id):
       raise BungoError("slow down pardner, you ain't a part of that there wager")
 
     if not ctx.message.mentions:
@@ -274,12 +267,7 @@ async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes:
 @ignore_bots
 @is_registered(con)
 async def cancel(ctx, display_bet_id: int):
-  canceller = con.execute(
-    'SELECT id FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
-
-  canceller_id = canceller[0]
+  canceller: User = user.from_discord_user(ctx.author, con)
 
   try:
     bet_id = parse_ticket_id(display_bet_id)
@@ -300,7 +288,7 @@ async def cancel(ctx, display_bet_id: int):
   participant1_id = bet[1]
   participant2_id = bet[2]
 
-  if canceller_id not in (participant1_id, participant2_id):
+  if canceller.id not in (participant1_id, participant2_id):
     await ctx.channel.send("slow down pardner, you ain't a part of that there wager")
     return
 
@@ -317,13 +305,8 @@ async def cancel(ctx, display_bet_id: int):
   help="forgot ur ticket number eh? that's okay, i got 'em all up here, just ask and i'll give ya the full list of active bets")
 @ignore_bots
 @is_registered(con)
-async def tickets(ctx):
-  user = con.execute(
-    'SELECT id, display_name FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
-
-  user_id = user[0]
+async def tickets(ctx: Context):
+  caller: User = user.from_discord_user(ctx.author, con)
 
   query = '''
           SELECT b.id,
@@ -339,13 +322,13 @@ async def tickets(ctx):
           ORDER BY b.created_at DESC \
           '''
 
-  tickets = con.execute(query, (user_id, user_id)).fetchall()
+  tickets: list[Row] = con.execute(query, (caller.id, caller.id)).fetchall()
 
   if not tickets:
     await ctx.channel.send("u ain't got no active wagers right now pardner")
     return
 
-  lines = ['```', 'ur active tickets', '━━━━━━━━━━━━━━━━━━━━━━━']
+  lines: list[str] = ['```', 'ur active tickets', '━━━━━━━━━━━━━━━━━━━━━━━']
 
   for ticket_id, description, p1_name, p2_name, created_at in tickets:
     display_ticket_id = format_ticket_id(ticket_id)
@@ -363,24 +346,19 @@ async def tickets(ctx):
 @bot.command(help='check ur holdings - bungo dollars, bungo bux, and spins')
 @ignore_bots
 @is_registered(con)
-async def wallet(ctx):
-  user = con.execute(
-    'SELECT display_name, bungo_dollars, bungo_bux, spins FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
+async def wallet(ctx: Context):
+  caller: User = user.from_discord_user(ctx.author, con)
 
-  display_name, bungo_dollars, bungo_bux, spins = user
+  lines = ['```', f"{caller.display_name}'s wallet", '━━━━━━━━━━━━━━━━━━━━━━━']
 
-  lines = ['```', f"{display_name}'s wallet", '━━━━━━━━━━━━━━━━━━━━━━━']
-
-  if bungo_dollars >= 0:
-    dollars_str = f'${bungo_dollars}'
+  if caller.bungo_dollars >= 0:
+    dollars_str = f'${caller.bungo_dollars}'
   else:
-    dollars_str = f'-${abs(bungo_dollars)}'
+    dollars_str = f'-${abs(caller.bungo_dollars)}'
 
   lines.append(f'bungo dollars: {dollars_str}')
-  lines.append(f'bungo bux:     {bungo_bux}')
-  lines.append(f'spins:         {spins}')
+  lines.append(f'bungo bux:     {caller.bungo_bux}')
+  lines.append(f'spins:         {caller.spins}')
   lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
   lines.append('```')
 
@@ -437,7 +415,7 @@ async def leadrbord(ctx):
 @bot.command(help='see who owes whom in a fancy graph')
 @ignore_bots
 @is_registered(con)
-async def debts(ctx):
+async def debts(ctx: Context):
   debt_edges = calculate_global_debts(con)
 
   if not debt_edges:
