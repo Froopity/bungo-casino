@@ -8,7 +8,7 @@ import pytest
 async def test_leadrbord_no_resolved_bets(mock_db, mock_ctx):
   con, cur = mock_db
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)
@@ -42,7 +42,7 @@ async def test_leadrbord_displays_top_users(mock_db, mock_ctx):
   )
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)
@@ -86,7 +86,7 @@ async def test_leadrbord_balance_calculation(mock_db, mock_ctx):
 
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)
@@ -119,7 +119,7 @@ async def test_leadrbord_excludes_cancelled_bets(mock_db, mock_ctx):
   )
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)
@@ -164,7 +164,7 @@ async def test_leadrbord_tiebreaker_logic(mock_db, mock_ctx):
   )
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)
@@ -194,7 +194,7 @@ async def test_leadrbord_truncates_long_names(mock_db, mock_ctx):
   )
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)
@@ -221,7 +221,7 @@ async def test_leadrbord_fewer_than_10_users(mock_db, mock_ctx):
   )
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)
@@ -250,7 +250,7 @@ async def test_leadrbord_limits_to_10_users(mock_db, mock_ctx):
     )
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)
@@ -277,7 +277,7 @@ async def test_leaderboard_alias_works(mock_db, mock_ctx):
   )
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import leadrbord
 
     await leadrbord(mock_ctx)

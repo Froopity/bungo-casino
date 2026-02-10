@@ -1,6 +1,5 @@
-import sqlite3
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -23,7 +22,7 @@ async def test_wager_success_with_mention(mock_db, mock_ctx_with_guild, mock_bot
   mentioned_user.display_name = 'TestOpponent'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, '@TestOpponent', description='I can juggle 5 balls')
@@ -59,7 +58,7 @@ async def test_wager_success_with_display_name(mock_db, mock_ctx_with_guild, moc
   mentioned_user.display_name = 'TestOpponent'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestOpponent', description='I can eat 10 hot dogs')
@@ -87,7 +86,7 @@ async def test_wager_self_betting_with_mention(mock_db, mock_ctx_with_guild, moc
   mentioned_user.display_name = 'TestCreator'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, '@TestCreator', description='test bet')
@@ -111,7 +110,7 @@ async def test_wager_self_betting_with_display_name(mock_db, mock_ctx_with_guild
   mentioned_user.display_name = 'TestCreator'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestCreator', description='test bet')
@@ -135,7 +134,7 @@ async def test_wager_opponent_not_registered_mention(mock_db, mock_ctx_with_guil
   mentioned_user.display_name = 'TestOpponent'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, '@TestOpponent', description='test bet')
@@ -159,7 +158,7 @@ async def test_wager_opponent_in_guild_not_registered(mock_db, mock_ctx_with_gui
   mentioned_user.display_name = 'testopponent'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'testopponent', description='test bet')
@@ -183,7 +182,7 @@ async def test_wager_opponent_not_in_guild(mock_db, mock_ctx_with_guild, mock_bo
   mentioned_user.display_name = 'NoSuchPerson'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'NoSuchPerson', description='test bet')
@@ -208,7 +207,7 @@ async def test_wager_description_too_long(mock_db, mock_ctx_with_guild, mock_bot
 
   long_description = 'x' * 281
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestOpponent', description=long_description)
@@ -236,7 +235,7 @@ async def test_wager_bet_created_in_database(mock_db, mock_ctx_with_guild, mock_
   mentioned_user.display_name = 'TestOpponent'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestOpponent', description='Test Description')
@@ -269,7 +268,7 @@ async def test_wager_bet_id_returned(mock_db, mock_ctx_with_guild, mock_bot):
   mentioned_user.display_name = 'TestOpponent'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'TestOpponent', description='First bet')
@@ -296,7 +295,7 @@ async def test_wager_opponent_registered_not_in_guild(mock_db, mock_ctx_with_gui
   mentioned_user.display_name = 'GoneUser'
   mock_ctx_with_guild.message.mentions = [mentioned_user]
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
+  with patch('casino.bot.con', con), patch('casino.bot.bot', mock_bot):
     from casino.bot import wager
 
     await wager(mock_ctx_with_guild, 'GoneUser', description='test bet')
