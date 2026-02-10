@@ -1,3 +1,5 @@
+from sqlite3 import Cursor
+from typing import Callable, Tuple
 import os
 import random
 import sqlite3
@@ -85,33 +87,36 @@ async def spin(ctx):
 
 @bot.command(help="introduce urself, pick a name and don't try any funny business")
 @ignore_bots
-async def howdy(ctx, display_name: str | None = None):
-  existing_user = con.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
-  if existing_user:
-    name = existing_user[0]
+async def howdy(ctx: Context, display_name: str | None = None):
+  try:
+    existing_user: User = user.from_discord_user(ctx.author, con)
     if display_name is None:
-      await ctx.channel.send(f'howdy {name}, try placing a bet!')
+      await ctx.channel.send(f'howdy {existing_user.display_name}, try placing a bet!')
     else:
-      await ctx.channel.send(f'u already got a name: {name}')
+      await ctx.channel.send(f'u already got a name: {existing_user.display_name}')
     return
+  except UnknownEntityError:
+    pass
 
-  validations = [
-    (lambda x: x is None or len(x) == 0, 'u gotta tell me ur name! say "$howdy <urname>"'),
-    (lambda x: len(x) > 32, 'i aint gonna remember all that, pick a shorter name'),
-    (lambda x: name_is_bungo(x, get_bot_id(bot)), 'fuckoffyoucunt'),
-    (lambda x: x == '@everyone', 'think ur fucken cheeky huh'),
-    (lambda x: not x[0].isalnum(), 'it gets weird when u start ur name with a symbol, try somethin else'),
-    (lambda x: not is_valid_name(x),
-     'nice try bingus, normal werds only in my casino (alphanumeric and !@#$%)')
+  validations: list[tuple[Callable[[str | None], bool], str]] = [
+      (lambda x: not x, 'u gotta tell me ur name! say "$howdy <urname>"'),
+      (lambda x: len(x or '') > 32, 'i aint gonna remember all that, pick a shorter name'),
+      (lambda x: name_is_bungo(x, get_bot_id(bot)), 'frick off'),
+      (lambda x: x == '@everyone', 'think ur frickin cheeky huh'),
+      (lambda x: x and not x[0].isalnum(), 'it gets weird when u start ur name with a symbol'),
+      (lambda x: not is_valid_name(x), 'nice try bingus, normal werds only')
   ]
 
-  for validation, msg in validations:
-    if validation(display_name):
-      await ctx.channel.send(msg)
+  # Use next() with a default of None to find the first failure
+  error_msg: str | None = next((msg for check, msg in validations if check(display_name)), None)
+
+  if error_msg:
+      await ctx.channel.send(error_msg)
       return
 
-  name_taken = con.execute('SELECT 1 FROM user WHERE display_name = ?', (display_name,)).fetchone()
-  if name_taken:
+  assert display_name is not None
+
+  if user.with_name_exists(display_name, con):
     await ctx.channel.send(f'somebody already dang ol using the name {display_name}, get ur own')
     return
 
@@ -123,7 +128,7 @@ async def howdy(ctx, display_name: str | None = None):
 
 @bot.command(help='already figured that one out, huh? helps, duh')
 async def help(ctx):
-  lines = [
+  lines: list[str] = [
     '```'
     "new around here pardner? let's help get ya situated real fast like:",
     "i don't know how's it works were ur from, but here? we all start our conversations with '$'",
@@ -142,60 +147,46 @@ async def help(ctx):
   help="place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y'alls wager")
 @ignore_bots
 @is_registered(con)
-async def wager(ctx, opponent: str | None = None, *, description: str | None = None):
-  if opponent is None:
-    await ctx.channel.send('u gotta pick an opponent champ!')
-    return
-  if description is None:
-    await ctx.channel.send('u gotta describe ur wager')
-    return
+async def wager(ctx: Context, opponent_name: str | None = None, *, description: str | None = None):
+  try:
+    if not ctx.message.mentions or opponent_name is None:
+      raise BungoError('u gotta tag ur opponent like this: $wager @bungo ...')
 
-  if name_is_bungo(opponent, get_bot_id(bot)):
-    await ctx.channel.send('u dont wanna play against the house bucko, bungo always wins')
+    if description is None:
+      raise BungoError('u gotta describe ur wager')
 
-  creator = con.execute(
-    'SELECT id, display_name FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
+    if name_is_bungo(opponent_name, get_bot_id(bot)):
+      raise BungoError('u dont wanna play against the house bucko, bungo always wins')
 
-  creator_id, creator_name = creator
+    # Creator is already verified with @is_registered
+    creator: User = user.from_discord_user(ctx.author, con)
 
-  if len(description) > 280:
-    await ctx.channel.send("hold on partner that description's too long, keep it under 280 characters")
-    return
+    try:
+      opponent: User = user.from_discord_user(ctx.message.mentions[0], con)
+    except UnknownEntityError:
+      raise BungoError(f"hold on hold on, {opponent.display_name} has to say $howdy to ol' bungo first")
 
-  if not ctx.message.mentions:
-    await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
-    return
+    if opponent == creator:
+      raise BungoError('you cant place a wager on urself!')
 
-  mentioned_user = ctx.message.mentions[0]
-
-  if mentioned_user.id == ctx.author.id:
-    await ctx.channel.send('you cant place a wager on urself!')
+    if len(description) > 280:
+      raise BungoError("hold on partner that description's too long, keep it under 280 characters")
+  except BungoError as e:
+    print(f'Encountered validation error: {e}')
+    await ctx.channel.send(str(e))
     return
 
-  opponent_user = con.execute(
-    'SELECT id FROM user WHERE discord_id = ?',
-    (str(mentioned_user.id),)
-  ).fetchone()
-
-  if not opponent_user:
-    await ctx.channel.send(f"hold on hold on, {mentioned_user.display_name} has to say $howdy to ol' bungo first")
-    return
-
-  opponent_id = opponent_user[0]
-
-  cur = con.execute(
+  cur: Cursor = con.execute(
     '''INSERT INTO bet
        (participant1_id, participant2_id, description, state, created_by_discord_id)
        VALUES (?, ?, ?, 'active', ?)''',
-    (creator_id, opponent_id, description, str(ctx.author.id))
+    (creator.id, opponent.id, description, str(ctx.author.id))
   )
   con.commit()
 
   if cur.lastrowid is None:
     raise SqlError('Ticket creation did not return ticket ID')
-  ticket_num = cur.lastrowid
+  ticket_num: int = cur.lastrowid
 
   await ctx.channel.send(f'alrighty your ticket is {format_ticket_id(ticket_num)} good luck champ')
 
@@ -377,11 +368,11 @@ async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes:
     if not ctx.message.mentions:
       raise BungoError('u gotta @mention the winner!')
 
-    participants = user.get_users_by_id([participant1_id, participant2_id], con)
+    participants = user.find_ids([participant1_id, participant2_id], con)
 
     participant1 = participants[participant1_id]
     participant2 = participants[participant2_id]
-    mentioned_user = user.get_discord_user(ctx.message.mentions[0], con)
+    mentioned_user = user.from_discord_user(ctx.message.mentions[0], con)
 
     if mentioned_user.id not in (participant1.id, participant2.id):
       raise BungoError(f'they aint a pard of this, its between {participant1.display_name} and {participant2.display_name}')

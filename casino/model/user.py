@@ -1,4 +1,6 @@
 from __future__ import annotations
+from discord import Member
+from sqlite3 import Connection, Row
 
 from datetime import datetime
 from dataclasses import dataclass
@@ -22,7 +24,7 @@ class User:
     return cls(*row)
 
 
-def get_discord_user(user: DiscordUser, con: sqlite3.Connection) -> User:
+def from_discord_user(user: DiscordUser | Member, con: sqlite3.Connection) -> User:
   discord_id = str(user.id)
 
   row = con.execute(
@@ -36,12 +38,15 @@ def get_discord_user(user: DiscordUser, con: sqlite3.Connection) -> User:
   return User.from_row(row)
 
 
-def get_users_by_id(user_ids: list[int], con: sqlite3.Connection) -> dict[int, User]:
+def find_ids(user_ids: list[int], con: Connection) -> dict[str, User]:
   placeholders = ', '.join(['?'] * len(user_ids))
 
-  users = {}
+  users: dict[str, User] = {}
   for row in con.execute(f'select * from user where id in ({placeholders})', user_ids):
-    user = User.from_row(row)
+    user: User = User.from_row(row)
     users[user.id] = user
 
   return users
+
+def with_name_exists(name: str, con: Connection) -> bool:
+  return con.execute('SELECT 1 FROM user WHERE display_name = ?', (name,)).rowcount == 1
