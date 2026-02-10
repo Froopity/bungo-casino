@@ -1,4 +1,5 @@
 import functools
+from sqlite3 import Connection
 from discord.ext import commands
 
 
@@ -15,9 +16,9 @@ def ignore_bots(func):
   return wrapper
 
 
-def is_registered(cur):
+def is_registered(con: Connection):
   async def predicate(ctx):
-    user = cur.execute(
+    user = con.execute(
       'SELECT id FROM user WHERE discord_id = ?',
       (str(ctx.author.id),)
     ).fetchone()

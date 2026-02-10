@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from sqlite3 import Cursor
+from sqlite3 import Connection
 from discord.abc import User
 
 from discord.ext.commands.bot import Bot
@@ -25,10 +25,10 @@ def parse_ticket_id(display_id: int) -> int:
   return int(id_str[1:])
 
 
-def get_user_id(user: User, cur: Cursor) -> str:
+def get_user_id(user: User, con: Connection) -> str:
   discord_id = str(user.id)
 
-  user_id = cur.execute(
+  user_id = con.execute(
     'SELECT id FROM user WHERE discord_id = ?',
     (discord_id,)
   ).fetchone()
@@ -47,11 +47,11 @@ class BetOutcome:
   loser_name: str
 
 
-async def parse_winner_for_bet(elected_winner_id: str, participant1_id, participant2_id, cur):
+async def parse_winner_for_bet(elected_winner_id: str, participant1_id: int, participant2_id: int, con: Connection):
   """
   Determine winner and loser and return their bungo names.
   """
-  results = cur.execute(
+  results = con.execute(
       'SELECT id, display_name FROM user WHERE id IN (?, ?)',
       (participant1_id, participant2_id)
   ).fetchall()
@@ -95,7 +95,7 @@ def get_bot_id(bot: Bot) -> int:
     return bot.user.id
 
 
-def calculate_global_debts(cur):
+def calculate_global_debts(con: Connection):
   query = '''
     SELECT
       debtor.display_name,
@@ -112,7 +112,7 @@ def calculate_global_debts(cur):
     GROUP BY debtor.id, creditor.id
   '''
 
-  results = cur.execute(query).fetchall()
+  results = con.execute(query).fetchall()
   return [(debtor, creditor, amount) for debtor, creditor, amount in results]
 
 

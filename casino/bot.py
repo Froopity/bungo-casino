@@ -28,7 +28,6 @@ bot = commands.Bot(command_prefix='$', intents=intents, help_command=None)
 sqlite_adapters.register_adapters()
 db_path = os.getenv('DATABASE_PATH', str((Path(__file__).parent.parent / 'data' / 'casino.db').resolve()))
 con = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-cur = con.cursor()
 
 
 @bot.event
@@ -47,9 +46,9 @@ async def on_command_error(ctx, error):
 
 @bot.command(help='test ur luck! remember, taran always loses')
 @ignore_bots
-@is_registered(cur)
+@is_registered(con)
 async def spin(ctx):
-  gambler = User.from_row(cur.execute(
+  gambler = User.from_row(con.execute(
     'SELECT * FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone())
@@ -61,7 +60,7 @@ async def spin(ctx):
   frame, bux = spin_slots()
   msg = f'''```\n{frame}\n```'''
 
-  cur.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?',
+  con.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?',
               (gambler.spins - 1, gambler.bungo_bux + bux, str(ctx.author.id)))
 
   if bux == 0:
@@ -71,7 +70,7 @@ async def spin(ctx):
   else:
     msg += f'u win **{bux}** bungo bux, congrats high roller!\n'
 
-  cur.execute('INSERT INTO spins (user_id, winnings) VALUES (?, ?)',
+  con.execute('INSERT INTO spins (user_id, winnings) VALUES (?, ?)',
               (gambler.id, bux))
 
   con.commit()
@@ -85,7 +84,7 @@ async def spin(ctx):
 @bot.command(help="introduce urself, pick a name and don't try any funny business")
 @ignore_bots
 async def howdy(ctx, display_name: str | None = None):
-  existing_user = cur.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
+  existing_user = con.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
   if existing_user:
     name = existing_user[0]
     if display_name is None:
@@ -109,12 +108,12 @@ async def howdy(ctx, display_name: str | None = None):
       await ctx.channel.send(msg)
       return
 
-  name_taken = cur.execute('SELECT 1 FROM user WHERE display_name = ?', (display_name,)).fetchone()
+  name_taken = con.execute('SELECT 1 FROM user WHERE display_name = ?', (display_name,)).fetchone()
   if name_taken:
     await ctx.channel.send(f'somebody already dang ol using the name {display_name}, get ur own')
     return
 
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
+  con.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
               (str(uuid.uuid4()), ctx.author.id, display_name))
   con.commit()
   await ctx.channel.send(f"why howdy {display_name}, welcome to ol' bungo's casino!")
@@ -140,7 +139,7 @@ async def help(ctx):
 @bot.command(
   help="place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y'alls wager")
 @ignore_bots
-@is_registered(cur)
+@is_registered(con)
 async def wager(ctx, opponent: str | None = None, *, description: str | None = None):
   if opponent is None:
     await ctx.channel.send('u gotta pick an opponent champ!')
@@ -152,7 +151,7 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
   if name_is_bungo(opponent, get_bot_id(bot)):
     await ctx.channel.send('u dont wanna play against the house bucko, bungo always wins')
 
-  creator = cur.execute(
+  creator = con.execute(
     'SELECT id, display_name FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
@@ -173,7 +172,7 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
     await ctx.channel.send('you cant place a wager on urself!')
     return
 
-  opponent_user = cur.execute(
+  opponent_user = con.execute(
     'SELECT id FROM user WHERE discord_id = ?',
     (str(mentioned_user.id),)
   ).fetchone()
@@ -184,7 +183,7 @@ async def wager(ctx, opponent: str | None = None, *, description: str | None = N
 
   opponent_id = opponent_user[0]
 
-  cur.execute(
+  cur = con.execute(
     '''INSERT INTO bet
        (participant1_id, participant2_id, description, state, created_by_discord_id)
        VALUES (?, ?, ?, 'active', ?)''',
@@ -224,8 +223,10 @@ class ResolutionConfirmView(discord.ui.View):
     self._disable_buttons()
 
     # Get loser_id to update their bungo dollars
-    bet = cur.execute('SELECT participant1_id, participant2_id FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
+    bet = con.execute('SELECT participant1_id, participant2_id FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
     loser_id = bet[0] if bet[1] == self.winner_id else bet[1]
+
+    cur = con.cursor()
 
     cur.execute(
       '''UPDATE bet
@@ -243,7 +244,7 @@ class ResolutionConfirmView(discord.ui.View):
     con.commit()
 
     if cur.rowcount == 0:
-      bet = cur.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
+      bet = con.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
       if bet and bet[0] != 'active':
         await interaction.response.edit_message(
           content="cmon champ, that wager's long gone by now",
@@ -295,7 +296,7 @@ class CancellationConfirmView(discord.ui.View):
   async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
     self._disable_buttons()
 
-    cur.execute(
+    cur = con.execute(
       '''UPDATE bet
          SET state = 'cancelled'
          WHERE id = ?
@@ -305,7 +306,7 @@ class CancellationConfirmView(discord.ui.View):
     con.commit()
 
     if cur.rowcount == 0:
-      bet = cur.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
+      bet = con.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
       if bet and bet[0] != 'active':
         await interaction.response.edit_message(
           content="cmon champ, that wager's long gone by now",
@@ -341,11 +342,11 @@ class CancellationConfirmView(discord.ui.View):
 @bot.command(
   help="bet's all done? well then, better let me know who won! show me ur ticket and ur winner, and i'll put it up on that thar leadrbord")
 @ignore_bots
-@is_registered(cur)
+@is_registered(con)
 async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str = ''):
   # Note: We ignore the user parameter value and just fetch it straight from the mentions.
 
-  resolver = cur.execute(
+  resolver = con.execute(
     'SELECT id FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
@@ -357,7 +358,7 @@ async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str 
     except ValueError:
       raise BungoError("that don't look like a proper ticket numbr")
 
-    bet = cur.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?',
+    bet = con.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?',
                       (bet_id,)).fetchone()
 
     if not bet:
@@ -377,9 +378,9 @@ async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str 
     if len(notes) > 280:
       raise BungoError('keep them notes under 280 characters pardner')
 
-    mentioned_user_id = get_user_id(ctx.message.mentions[0], cur)
+    mentioned_user_id = get_user_id(ctx.message.mentions[0], con)
 
-    bet_outcome = await parse_winner_for_bet(mentioned_user_id, participant1_id, participant2_id, cur)
+    bet_outcome = await parse_winner_for_bet(mentioned_user_id, participant1_id, participant2_id, con)
   except BungoError as e:
     print(f'Encountered Bungo error, returning message: {str(e)}')
     await ctx.channel.send(str(e))
@@ -410,9 +411,9 @@ async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str 
 @bot.command(help="bet not work out? just let me know the ticket number and i'll take it offa my books",
              aliases=['rules'])
 @ignore_bots
-@is_registered(cur)
+@is_registered(con)
 async def cancel(ctx, display_bet_id: int):
-  canceller = cur.execute(
+  canceller = con.execute(
     'SELECT id FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
@@ -425,7 +426,7 @@ async def cancel(ctx, display_bet_id: int):
     await ctx.channel.send("that don't look like a proper ticket numbr")
     return
 
-  bet = cur.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
+  bet = con.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
 
   if not bet:
     await ctx.channel.send("i ain't know nothin bout that ticket numbr")
@@ -453,9 +454,9 @@ async def cancel(ctx, display_bet_id: int):
 @bot.command(
   help="forgot ur ticket number eh? that's okay, i got 'em all up here, just ask and i'll give ya the full list of active bets")
 @ignore_bots
-@is_registered(cur)
+@is_registered(con)
 async def tickets(ctx):
-  user = cur.execute(
+  user = con.execute(
     'SELECT id, display_name FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
@@ -476,7 +477,7 @@ async def tickets(ctx):
           ORDER BY b.created_at DESC \
           '''
 
-  tickets = cur.execute(query, (user_id, user_id)).fetchall()
+  tickets = con.execute(query, (user_id, user_id)).fetchall()
 
   if not tickets:
     await ctx.channel.send("u ain't got no active wagers right now pardner")
@@ -499,9 +500,9 @@ async def tickets(ctx):
 
 @bot.command(help='check ur holdings - bungo dollars, bungo bux, and spins')
 @ignore_bots
-@is_registered(cur)
+@is_registered(con)
 async def wallet(ctx):
-  user = cur.execute(
+  user = con.execute(
     'SELECT display_name, bungo_dollars, bungo_bux, spins FROM user WHERE discord_id = ?',
     (str(ctx.author.id),)
   ).fetchone()
@@ -542,7 +543,7 @@ async def leadrbord(ctx):
           ORDER BY balance DESC, wins DESC LIMIT 10 \
           '''
 
-  results = cur.execute(query).fetchall()
+  results = con.execute(query).fetchall()
 
   if not results:
     await ctx.channel.send("ain't nobody played yet pardner")
@@ -573,9 +574,9 @@ async def leadrbord(ctx):
 
 @bot.command(help='see who owes whom in a fancy graph')
 @ignore_bots
-@is_registered(cur)
+@is_registered(con)
 async def debts(ctx):
-  debt_edges = calculate_global_debts(cur)
+  debt_edges = calculate_global_debts(con)
 
   if not debt_edges:
     await ctx.channel.send("ain't nobody got debts yet pardner")
