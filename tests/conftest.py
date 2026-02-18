@@ -1,36 +1,39 @@
 import sys
 import sqlite3
 import uuid
-import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from yoyo import read_migrations, get_backend
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+_MIGRATIONS_DIR = Path(__file__).parent.parent / 'migrations'
+_MIGRATION_SQL = None
+
+def _load_migrations():
+  global _MIGRATION_SQL
+  if _MIGRATION_SQL is not None:
+    return _MIGRATION_SQL
+  sql_files = sorted(_MIGRATIONS_DIR.glob('*.sql'))
+  parts = []
+  for f in sql_files:
+    text = f.read_text()
+    lines = [l for l in text.splitlines() if not l.startswith('-- ')]
+    parts.append('\n'.join(lines))
+  _MIGRATION_SQL = '\n'.join(parts)
+  return _MIGRATION_SQL
 
 
 @pytest.fixture
 def mock_db():
-  with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
-    db_path = tmp.name
-
-  backend = get_backend(f'sqlite:///{db_path}')
-
-  migrations_path = Path(__file__).parent.parent / 'migrations'
-  migrations = read_migrations(str(migrations_path))
-
-  with backend.lock():
-    backend.apply_migrations(backend.to_apply(migrations))
-
-  con = backend.connection
+  con = sqlite3.connect(':memory:')
+  con.executescript(_load_migrations())
   cur = con.cursor()
 
   yield con, cur
 
   con.close()
-  Path(db_path).unlink(missing_ok=True)
 
 
 @pytest.fixture

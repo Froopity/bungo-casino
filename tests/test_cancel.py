@@ -22,7 +22,7 @@ async def test_cancel_success(mock_db, mock_ctx_with_guild, mock_interaction):
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 101)
@@ -69,7 +69,7 @@ async def test_cancel_either_participant_can_cancel(mock_db, mock_ctx_with_guild
   mock_ctx_participant2.message.mentions = []
   mock_ctx_participant2.guild = mock_ctx_with_guild.guild
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_participant2, 101)
@@ -95,7 +95,7 @@ async def test_cancel_confirmation_button_nevrmind(mock_db, mock_ctx_with_guild,
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 101)
@@ -121,7 +121,7 @@ async def test_cancel_bet_not_found(mock_db, mock_ctx_with_guild):
               (p1_id, 12345, 'Player1'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 1999)
@@ -148,7 +148,7 @@ async def test_cancel_bet_already_resolved(mock_db, mock_ctx_with_guild):
               (p1_id, p2_id, 'Test bet', '12345', p1_id))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 101)
@@ -175,7 +175,7 @@ async def test_cancel_bet_already_cancelled(mock_db, mock_ctx_with_guild):
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 101)
@@ -205,7 +205,7 @@ async def test_cancel_not_a_participant(mock_db, mock_ctx_with_guild):
               (p1_id, p2_id, 'Test bet', '99999'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 101)
@@ -232,7 +232,7 @@ async def test_cancel_race_condition(mock_db, mock_ctx_with_guild, mock_interact
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 101)
@@ -266,7 +266,7 @@ async def test_cancel_database_state_updated(mock_db, mock_ctx_with_guild, mock_
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 101)
@@ -295,7 +295,7 @@ async def test_cancel_unauthorized_button_click(mock_db, mock_ctx_with_guild, mo
               (p1_id, p2_id, 'Test bet', '12345'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con):
+  with patch('casino.bot.con', con):
     from casino.bot import cancel
 
     await cancel(mock_ctx_with_guild, 101)

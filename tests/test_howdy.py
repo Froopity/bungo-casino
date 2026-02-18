@@ -8,7 +8,7 @@ import pytest
 async def test_howdy_creates_new_user(mock_db, mock_ctx):
   con, cur = mock_db
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
+  with patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
     mock_bot.user.id = 999999
     from casino.bot import howdy
 
@@ -28,7 +28,7 @@ async def test_howdy_rejects_existing_user(mock_db, mock_ctx):
               (str(uuid.uuid4()), 12345, 'ExistingUser'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
+  with patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
     mock_bot.user.id = 999999
     from casino.bot import howdy
 
@@ -44,7 +44,7 @@ async def test_howdy_rejects_taken_display_name(mock_db, mock_ctx):
               (str(uuid.uuid4()), 99999, 'TakenName'))
   con.commit()
 
-  with patch('casino.bot.cur', cur), patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
+  with patch('casino.bot.con', con), patch('casino.bot.bot') as mock_bot:
     mock_bot.user.id = 999999
     from casino.bot import howdy
 
