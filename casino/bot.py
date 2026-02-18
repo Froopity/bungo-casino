@@ -1,3 +1,4 @@
+from casino.model.bet import Bet
 from sqlite3 import Cursor, Row
 from typing import Callable
 import os
@@ -201,27 +202,21 @@ async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes:
     except ValueError as e:
       raise BungoError("that don't look like a proper ticket numbr") from e
 
-    bet = con.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?',
-                      (bet_id,)).fetchone()
+    try:
+      bet: Bet = Bet.from_row(con.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone())
+    except ValueError as e:
+      raise BungoError("i ain't know nothin bout that ticket numbr") from e
 
-    if not bet:
-      raise BungoError("i ain't know nothin bout that ticket numbr")
-
-    participant1_id, participant2_id, description, state = bet
-
-    if state != 'active':
+    if not bet.is_active:
       raise BungoError("cmon champ, that wager's long gone by now")
 
-    if resolver.id not in (participant1_id, participant2_id):
+    if resolver.id not in (bet.participant1_id, bet.participant2_id):
       raise BungoError("slow down pardner, you ain't a part of that there wager")
 
     if not ctx.message.mentions:
       raise BungoError('u gotta @mention the winner!')
 
-    participants = user.find_ids([participant1_id, participant2_id], con)
-
-    participant1 = participants[participant1_id]
-    participant2 = participants[participant2_id]
+    participant1, participant2 = bet.participants(con)
     mentioned_user = user.from_discord_user(ctx.message.mentions[0], con)
 
     if mentioned_user.id not in (participant1.id, participant2.id):
@@ -251,7 +246,7 @@ async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes:
   )
 
   confirmation_msg = (
-    f'wager: {description}\n'
+    f'wager: {bet.description}\n'
     f'between: {winner.display_name} and {loser.display_name}\n\n'
     f'r ya sure {winner.display_name} wins?'
   )
@@ -267,26 +262,23 @@ async def cancel(ctx, display_bet_id: int):
   canceller: User = user.from_discord_user(ctx.author, con)
 
   try:
-    bet_id = parse_ticket_id(display_bet_id)
-  except ValueError:
-    await ctx.channel.send("that don't look like a proper ticket numbr")
-    return
+    try:
+      bet_id = parse_ticket_id(display_bet_id)
+    except ValueError: # TODO: Make this return a custom error so we don't have multiple try-catch blocks like this
+      raise BungoError("that don't look like a proper ticket numbr")
 
-  bet = con.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
+    try:
+      bet = Bet.from_row(con.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone())
+    except ValueError as e:
+      raise BungoError("i ain't know nothin bout that ticket numbr") from e
 
-  if not bet:
-    await ctx.channel.send("i ain't know nothin bout that ticket numbr")
-    return
+    if not bet.is_active:
+      raise BungoError("cmon champ, that wager's long gone by now")
 
-  if bet[5] != 'active':
-    await ctx.channel.send("cmon champ, that wager's long gone by now")
-    return
-
-  participant1_id = bet[1]
-  participant2_id = bet[2]
-
-  if canceller.id not in (participant1_id, participant2_id):
-    await ctx.channel.send("slow down pardner, you ain't a part of that there wager")
+    if canceller.id not in (bet.participant1_id, bet.participant2_id):
+      raise BungoError("slow down pardner, you ain't a part of that there wager")
+  except BungoError as e:
+    await ctx.channel.send(str(e))
     return
 
   view = CancellationConfirmView(
@@ -346,7 +338,7 @@ async def tickets(ctx: Context):
 async def wallet(ctx: Context):
   caller: User = user.from_discord_user(ctx.author, con)
 
-  lines = ['```', f"{caller.display_name}'s wallet", '━━━━━━━━━━━━━━━━━━━━━━━']
+  lines: list[str] = ['```', f"{caller.display_name}'s wallet", '━━━━━━━━━━━━━━━━━━━━━━━']
 
   if caller.bungo_dollars >= 0:
     dollars_str = f'${caller.bungo_dollars}'
