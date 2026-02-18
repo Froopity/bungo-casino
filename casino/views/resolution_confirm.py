@@ -45,10 +45,6 @@ class ResolutionConfirmView(discord.ui.View):
            AND state = 'active' ''',
       (self.resolver_discord_id, self.winner_id, self.resolution_notes, self.bet_id)
     )
-    cur.execute('UPDATE user SET spins = spins + 1, bungo_dollars = bungo_dollars + 1 WHERE id = ?', (self.winner_id,))
-    cur.execute('UPDATE user SET bungo_dollars = bungo_dollars - 1 WHERE id = ?', (loser_id,))
-    self.con.commit()
-
     if cur.rowcount == 0:
       bet = self.con.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
       if bet and bet[0] != 'active':
@@ -62,6 +58,10 @@ class ResolutionConfirmView(discord.ui.View):
           view=self
         )
       return
+
+    cur.execute('UPDATE user SET spins = spins + 1, bungo_dollars = bungo_dollars + 1 WHERE id = ?', (self.winner_id,))
+    cur.execute('UPDATE user SET bungo_dollars = bungo_dollars - 1 WHERE id = ?', (loser_id,))
+    self.con.commit()
 
     await interaction.response.edit_message(
       content=f'congrertulatiorns {self.winner_name}, betrr luck next time {self.loser_name}',

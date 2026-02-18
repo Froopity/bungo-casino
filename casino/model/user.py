@@ -38,7 +38,7 @@ def from_discord_user(user: DiscordUser | Member, con: sqlite3.Connection) -> Us
   return User.from_row(row)
 
 
-def find_ids(user_ids: list[int], con: Connection) -> dict[str, User]:
+def find_ids(user_ids: list[str], con: Connection) -> dict[str, User]:
   placeholders = ', '.join(['?'] * len(user_ids))
 
   users: dict[str, User] = {}
