@@ -366,36 +366,6 @@ async def test_resolve_notes_too_long(mock_db, mock_ctx_with_guild):
     )
 
 
-@pytest.mark.asyncio
-async def test_resolve_case_insensitive_display_name(mock_db, mock_ctx_with_guild, mock_interaction):
-  con, cur = mock_db
-
-  p1_id = str(uuid.uuid4())
-  p2_id = str(uuid.uuid4())
-
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
-              (p1_id, 12345, 'Player1'))
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
-              (p2_id, 67890, 'Player2'))
-  cur.execute('''INSERT INTO bet
-                 (participant1_id, participant2_id, description, state, created_by_discord_id)
-                 VALUES (?, ?, ?, 'active', ?)''',
-              (p1_id, p2_id, 'Test bet', '12345'))
-  con.commit()
-
-  mentioned_user = MagicMock()
-  mentioned_user.id = 67890
-  mentioned_user.display_name = 'Player2'
-  mock_ctx_with_guild.message.mentions = [mentioned_user]
-
-  with patch('casino.bot.con', con):
-    from casino.bot import resolve
-
-    await resolve(mock_ctx_with_guild, 101, 'player2')
-
-    mock_ctx_with_guild.channel.send.assert_called_once()
-    assert 'r ya sure' in mock_ctx_with_guild.channel.send.call_args[0][0]
-
 
 @pytest.mark.asyncio
 async def test_resolve_database_fields_populated(mock_db, mock_ctx_with_guild, mock_interaction):

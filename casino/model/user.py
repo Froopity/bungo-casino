@@ -49,4 +49,4 @@ def find_ids(user_ids: list[int], con: Connection) -> dict[str, User]:
   return users
 
 def with_name_exists(name: str, con: Connection) -> bool:
-  return con.execute('SELECT 1 FROM user WHERE display_name = ?', (name,)).rowcount == 1
+  return con.execute('SELECT 1 FROM user WHERE display_name = ?', (name,)).fetchone() is not None

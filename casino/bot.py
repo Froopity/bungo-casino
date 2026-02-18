@@ -98,6 +98,7 @@ async def howdy(ctx: Context, display_name: str | None = None):
 
   validations: list[tuple[Callable[[str | None], bool], str]] = [
       (lambda x: not x, 'u gotta tell me ur name! say "$howdy <urname>"'),
+      (lambda x: user.with_name_exists(x, con), f'somebody already dang ol using the name {display_name}, get ur own'),
       (lambda x: len(x or '') > 32, 'i aint gonna remember all that, pick a shorter name'),
       (lambda x: name_is_bungo(x, get_bot_id(bot)), 'frick off'),
       (lambda x: x == '@everyone', 'think ur frickin cheeky huh'),
@@ -113,10 +114,6 @@ async def howdy(ctx: Context, display_name: str | None = None):
       return
 
   assert display_name is not None
-
-  if user.with_name_exists(display_name, con):
-    await ctx.channel.send(f'somebody already dang ol using the name {display_name}, get ur own')
-    return
 
   con.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
               (str(uuid.uuid4()), ctx.author.id, display_name))
@@ -162,7 +159,7 @@ async def wager(ctx: Context, opponent_name: str | None = None, *, description: 
     try:
       opponent: User = user.from_discord_user(ctx.message.mentions[0], con)
     except UnknownEntityError:
-      raise BungoError(f"hold on hold on, {opponent.display_name} has to say $howdy to ol' bungo first")
+      raise BungoError(f"hold on hold on, {opponent_name.replace('@', '', count=1)} has to say $howdy to ol' bungo first")
 
     if opponent == creator:
       raise BungoError('you cant place a wager on urself!')
