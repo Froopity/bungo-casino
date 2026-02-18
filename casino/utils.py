@@ -1,9 +1,9 @@
-from dataclasses import dataclass
-from sqlite3 import Cursor
-from discord.abc import User
+from typing import Tuple
+from sqlite3 import Connection
 
 from discord.ext.commands.bot import Bot
-from casino.exceptions import BotNotAuthenticatedError, BungoError, UnknownEntityError
+from casino.exceptions import BotNotAuthenticatedError
+from casino.model.user import User
 
 def is_valid_name(text):
   allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%')
@@ -25,62 +25,16 @@ def parse_ticket_id(display_id: int) -> int:
   return int(id_str[1:])
 
 
-def get_user_id(user: User, cur: Cursor) -> str:
-  discord_id = str(user.id)
-
-  user_id = cur.execute(
-    'SELECT id FROM user WHERE discord_id = ?',
-    (discord_id,)
-  ).fetchone()
-
-  if not user_id:
-    raise UnknownEntityError(user.name)
-
-  return user_id
-
-
-@dataclass(frozen=True)
-class BetOutcome:
-  winner_id: str
-  winner_name: str
-  loser_id: str
-  loser_name: str
-
-
-async def parse_winner_for_bet(elected_winner_id: str, participant1_id, participant2_id, cur):
+def find_winner(elected_winner: User,
+                participant1: User,
+                participant2: User) -> Tuple[User, User]:
   """
   Determine winner and loser and return their bungo names.
   """
-  results = cur.execute(
-      'SELECT id, display_name FROM user WHERE id IN (?, ?)',
-      (participant1_id, participant2_id)
-  ).fetchall()
+  if participant1 == elected_winner:
+    return participant1, participant2
 
-  user_map = dict(results)
-
-  try:
-    name1 = user_map[participant1_id]
-    name2 = user_map[participant2_id]
-  except KeyError as e:
-    raise UnknownEntityError(str(e)) from e
-
-  if elected_winner_id not in (participant1_id, participant2_id):
-    raise BungoError(f'they aint a pard of this, its between {name1} and {name2}')
-
-  if participant1_id == elected_winner_id:
-    return BetOutcome(
-      winner_id=participant1_id,
-      winner_name=name1,
-      loser_id=participant2_id,
-      loser_name=name2
-    )
-
-  return BetOutcome(
-    winner_id=participant2_id,
-    winner_name=name2,
-    loser_id=participant1_id,
-    loser_name=name1
-  )
+  return participant2, participant1
 
 
 def name_is_bungo(name: str, bot_id) -> bool:
@@ -95,7 +49,7 @@ def get_bot_id(bot: Bot) -> int:
     return bot.user.id
 
 
-def calculate_global_debts(cur):
+def calculate_global_debts(con: Connection):
   query = '''
     SELECT
       debtor.display_name,
@@ -112,7 +66,7 @@ def calculate_global_debts(cur):
     GROUP BY debtor.id, creditor.id
   '''
 
-  results = cur.execute(query).fetchall()
+  results = con.execute(query).fetchall()
   return [(debtor, creditor, amount) for debtor, creditor, amount in results]
 
 

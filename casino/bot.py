@@ -1,3 +1,6 @@
+from casino.model.bet import Bet
+from sqlite3 import Cursor, Row
+from typing import Callable
 import os
 import random
 import sqlite3
@@ -10,10 +13,15 @@ from discord.ext.commands.context import Context
 import dotenv
 from discord.ext import commands
 
+from casino import sqlite_adapters
 from casino.checks import ignore_bots, is_registered
 from casino.exceptions import BungoError, SqlError, UnknownEntityError
+from casino.model import user
+from casino.model.user import User
 from casino.slots import spin_slots
-from casino.utils import get_bot_id, get_user_id, is_valid_name, format_ticket_id, parse_ticket_id, parse_winner_for_bet, name_is_bungo, calculate_global_debts, generate_debt_graph_image
+from casino.utils import get_bot_id, is_valid_name, format_ticket_id, parse_ticket_id, find_winner, name_is_bungo, calculate_global_debts, generate_debt_graph_image
+from casino.views.cancellation_confirm import CancellationConfirmView
+from casino.views.resolution_confirm import ResolutionConfirmView
 
 random.seed()
 dotenv.load_dotenv()
@@ -23,9 +31,9 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='$', intents=intents, help_command=None)
 
+sqlite_adapters.register_adapters()
 db_path = os.getenv('DATABASE_PATH', str((Path(__file__).parent.parent / 'data' / 'casino.db').resolve()))
-con = sqlite3.connect(db_path)
-cur = con.cursor()
+con = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
 
 
 @bot.event
@@ -44,24 +52,19 @@ async def on_command_error(ctx, error):
 
 @bot.command(help='test ur luck! remember, taran always loses')
 @ignore_bots
-@is_registered(cur)
-async def spin(ctx):
-  gambler = cur.execute(
-    'SELECT id, display_name, spins, bungo_bux FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
+@is_registered(con)
+async def spin(ctx: Context):
+  gambler: User = user.from_discord_user(ctx.author, con)
 
-  user_id, name, spins, bungo_bux = gambler
-
-  if spins == 0:
-    await ctx.channel.send(f'sorry {name}, but ur outta spins. come back when u get one over on ur buds')
+  if gambler.spins == 0:
+    await ctx.channel.send(f'sorry {gambler.display_name}, but ur outta spins. come back when u get one over on ur buds')
     return
 
   frame, bux = spin_slots()
   msg = f'''```\n{frame}\n```'''
 
-  cur.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?',
-              (spins - 1, bungo_bux + bux, str(ctx.author.id)))
+  con.execute('UPDATE user SET spins = ?, bungo_bux = ? WHERE discord_id = ?',
+              (gambler.spins - 1, gambler.bungo_bux + bux, str(ctx.author.id)))
 
   if bux == 0:
     msg += 'u lost\n'
@@ -70,12 +73,12 @@ async def spin(ctx):
   else:
     msg += f'u win **{bux}** bungo bux, congrats high roller!\n'
 
-  cur.execute('INSERT INTO spins (user_id, winnings) VALUES (?, ?)',
-              (user_id, bux))
+  con.execute('INSERT INTO spins (user_id, winnings) VALUES (?, ?)',
+              (gambler.id, bux))
 
   con.commit()
-  if spins > 1:
-    msg += f'come back soon ya hear? you got **{spins - 1} spins left**!'
+  if gambler.spins > 1:
+    msg += f'come back soon ya hear? you got **{gambler.spins - 1} spins left**!'
   else:
     msg += 'ur all outta spins now champ!'
   await ctx.channel.send(msg)
@@ -83,37 +86,37 @@ async def spin(ctx):
 
 @bot.command(help="introduce urself, pick a name and don't try any funny business")
 @ignore_bots
-async def howdy(ctx, display_name: str | None = None):
-  existing_user = cur.execute('SELECT display_name FROM user WHERE discord_id = ?', (ctx.author.id,)).fetchone()
-  if existing_user:
-    name = existing_user[0]
+async def howdy(ctx: Context, display_name: str | None = None):
+  try:
+    existing_user: User = user.from_discord_user(ctx.author, con)
     if display_name is None:
-      await ctx.channel.send(f'howdy {name}, try placing a bet!')
+      await ctx.channel.send(f'howdy {existing_user.display_name}, try placing a bet!')
     else:
-      await ctx.channel.send(f'u already got a name: {name}')
+      await ctx.channel.send(f'u already got a name: {existing_user.display_name}')
     return
+  except UnknownEntityError:
+    pass
 
-  validations = [
-    (lambda x: x is None or len(x) == 0, 'u gotta tell me ur name! say "$howdy <urname>"'),
-    (lambda x: len(x) > 32, 'i aint gonna remember all that, pick a shorter name'),
-    (lambda x: name_is_bungo(x, get_bot_id(bot)), 'fuckoffyoucunt'),
-    (lambda x: x == '@everyone', 'think ur fucken cheeky huh'),
-    (lambda x: not x[0].isalnum(), 'it gets weird when u start ur name with a symbol, try somethin else'),
-    (lambda x: not is_valid_name(x),
-     'nice try bingus, normal werds only in my casino (alphanumeric and !@#$%)')
+  validations: list[tuple[Callable[[str | None], bool], str]] = [
+      (lambda x: not x, 'u gotta tell me ur name! say "$howdy <urname>"'),
+      (lambda x: user.with_name_exists(x, con), f'somebody already dang ol using the name {display_name}, get ur own'),
+      (lambda x: len(x or '') > 32, 'i aint gonna remember all that, pick a shorter name'),
+      (lambda x: name_is_bungo(x, get_bot_id(bot)), 'frick off'),
+      (lambda x: x == '@everyone', 'think ur frickin cheeky huh'),
+      (lambda x: x and not x[0].isalnum(), 'it gets weird when u start ur name with a symbol'),
+      (lambda x: not is_valid_name(x), 'nice try bingus, normal werds only')
   ]
 
-  for validation, msg in validations:
-    if validation(display_name):
-      await ctx.channel.send(msg)
+  # Use next() with a default of None to find the first failure
+  error_msg: str | None = next((msg for check, msg in validations if check(display_name)), None)
+
+  if error_msg:
+      await ctx.channel.send(error_msg)
       return
 
-  name_taken = cur.execute('SELECT 1 FROM user WHERE display_name = ?', (display_name,)).fetchone()
-  if name_taken:
-    await ctx.channel.send(f'somebody already dang ol using the name {display_name}, get ur own')
-    return
+  assert display_name is not None
 
-  cur.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
+  con.execute('INSERT INTO user (id, discord_id, display_name) VALUES (?, ?, ?)',
               (str(uuid.uuid4()), ctx.author.id, display_name))
   con.commit()
   await ctx.channel.send(f"why howdy {display_name}, welcome to ol' bungo's casino!")
@@ -121,7 +124,7 @@ async def howdy(ctx, display_name: str | None = None):
 
 @bot.command(help='already figured that one out, huh? helps, duh')
 async def help(ctx):
-  lines = [
+  lines: list[str] = [
     '```'
     "new around here pardner? let's help get ya situated real fast like:",
     "i don't know how's it works were ur from, but here? we all start our conversations with '$'",
@@ -139,246 +142,88 @@ async def help(ctx):
 @bot.command(
   help="place a bet, make sure u tag ur opponent using @<discord_name>, and then add a description of y'alls wager")
 @ignore_bots
-@is_registered(cur)
-async def wager(ctx, opponent: str | None = None, *, description: str | None = None):
-  if opponent is None:
-    await ctx.channel.send('u gotta pick an opponent champ!')
-    return
-  if description is None:
-    await ctx.channel.send('u gotta describe ur wager')
-    return
+@is_registered(con)
+async def wager(ctx: Context, opponent_name: str | None = None, *, description: str | None = None):
+  try:
+    if not ctx.message.mentions or opponent_name is None:
+      raise BungoError('u gotta tag ur opponent like this: $wager @bungo ...')
 
-  if name_is_bungo(opponent, get_bot_id(bot)):
-    await ctx.channel.send('u dont wanna play against the house bucko, bungo always wins')
+    if description is None:
+      raise BungoError('u gotta describe ur wager')
 
-  creator = cur.execute(
-    'SELECT id, display_name FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
+    if name_is_bungo(opponent_name, get_bot_id(bot)):
+      raise BungoError('u dont wanna play against the house bucko, bungo always wins')
 
-  creator_id, creator_name = creator
+    # Creator is already verified with @is_registered
+    creator: User = user.from_discord_user(ctx.author, con)
 
-  if len(description) > 280:
-    await ctx.channel.send("hold on partner that description's too long, keep it under 280 characters")
-    return
+    try:
+      opponent: User = user.from_discord_user(ctx.message.mentions[0], con)
+    except UnknownEntityError:
+      raise BungoError(f"hold on hold on, {opponent_name.replace('@', '', count=1)} has to say $howdy to ol' bungo first")
 
-  if not ctx.message.mentions:
-    await ctx.channel.send('u gotta tag ur opponent like this: $wager @bungo ...')
-    return
+    if opponent == creator:
+      raise BungoError('you cant place a wager on urself!')
 
-  mentioned_user = ctx.message.mentions[0]
-
-  if mentioned_user.id == ctx.author.id:
-    await ctx.channel.send('you cant place a wager on urself!')
+    if len(description) > 280:
+      raise BungoError("hold on partner that description's too long, keep it under 280 characters")
+  except BungoError as e:
+    print(f'Encountered validation error: {e}')
+    await ctx.channel.send(str(e))
     return
 
-  opponent_user = cur.execute(
-    'SELECT id FROM user WHERE discord_id = ?',
-    (str(mentioned_user.id),)
-  ).fetchone()
-
-  if not opponent_user:
-    await ctx.channel.send(f"hold on hold on, {mentioned_user.display_name} has to say $howdy to ol' bungo first")
-    return
-
-  opponent_id = opponent_user[0]
-
-  cur.execute(
+  cur: Cursor = con.execute(
     '''INSERT INTO bet
        (participant1_id, participant2_id, description, state, created_by_discord_id)
        VALUES (?, ?, ?, 'active', ?)''',
-    (creator_id, opponent_id, description, str(ctx.author.id))
+    (creator.id, opponent.id, description, str(ctx.author.id))
   )
   con.commit()
 
   if cur.lastrowid is None:
     raise SqlError('Ticket creation did not return ticket ID')
-  ticket_num = cur.lastrowid
+  ticket_num: int = cur.lastrowid
 
   await ctx.channel.send(f'alrighty your ticket is {format_ticket_id(ticket_num)} good luck champ')
-
-
-class ResolutionConfirmView(discord.ui.View):
-  def __init__(self, bet_id: int, winner_id: str, winner_name: str, loser_name: str,
-               resolver_discord_id: str, resolution_notes: str | None = None):
-    super().__init__(timeout=60.0)
-    self.bet_id = bet_id
-    self.winner_id = winner_id
-    self.winner_name = winner_name
-    self.loser_name = loser_name
-    self.resolver_discord_id = resolver_discord_id
-    self.resolution_notes = resolution_notes
-
-  async def interaction_check(self, interaction: discord.Interaction) -> bool:
-    if str(interaction.user.id) != self.resolver_discord_id:
-      await interaction.response.send_message(
-        'slow down pardner, only the person who done what called me can do that',
-        ephemeral=True
-      )
-      return False
-    return True
-
-  @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
-  async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-    self._disable_buttons()
-
-    # Get loser_id to update their bungo dollars
-    bet = cur.execute('SELECT participant1_id, participant2_id FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
-    loser_id = bet[0] if bet[1] == self.winner_id else bet[1]
-
-    cur.execute(
-      '''UPDATE bet
-         SET state                  = 'resolved',
-             resolved_at            = CURRENT_TIMESTAMP,
-             resolved_by_discord_id = ?,
-             winner_id              = ?,
-             resolution_notes       = ?
-         WHERE id = ?
-           AND state = 'active' ''',
-      (self.resolver_discord_id, self.winner_id, self.resolution_notes, self.bet_id)
-    )
-    cur.execute('UPDATE user SET spins = spins + 1, bungo_dollars = bungo_dollars + 1 WHERE id = ?', (self.winner_id,))
-    cur.execute('UPDATE user SET bungo_dollars = bungo_dollars - 1 WHERE id = ?', (loser_id,))
-    con.commit()
-
-    if cur.rowcount == 0:
-      bet = cur.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
-      if bet and bet[0] != 'active':
-        await interaction.response.edit_message(
-          content="cmon champ, that wager's long gone by now",
-          view=self
-        )
-      else:
-        await interaction.response.edit_message(
-          content='somethin went wrong there pardner',
-          view=self
-        )
-      return
-
-    await interaction.response.edit_message(
-      content=f'congrertulatiorns {self.winner_name}, betrr luck next time {self.loser_name}',
-      view=self
-    )
-
-  @discord.ui.button(label='nevrmind', style=discord.ButtonStyle.grey)
-  async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-    self._disable_buttons()
-
-    await interaction.response.edit_message(
-      content='alright pardner, resolution cancelled',
-      view=self
-    )
-
-  def _disable_buttons(self):
-    for item in self.children:
-        if isinstance(item, discord.ui.Button):
-            item.disabled = True
-
-
-class CancellationConfirmView(discord.ui.View):
-  def __init__(self, bet_id: int, canceller_discord_id: str):
-    super().__init__(timeout=60.0)
-    self.bet_id = bet_id
-    self.canceller_discord_id = canceller_discord_id
-
-  async def interaction_check(self, interaction: discord.Interaction) -> bool:
-    if str(interaction.user.id) != self.canceller_discord_id:
-      await interaction.response.send_message(
-        'slow down pardner, only the person who done what called me can do that',
-        ephemeral=True
-      )
-      return False
-    return True
-
-  @discord.ui.button(label='yes', style=discord.ButtonStyle.green)
-  async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-    self._disable_buttons()
-
-    cur.execute(
-      '''UPDATE bet
-         SET state = 'cancelled'
-         WHERE id = ?
-           AND state = 'active' ''',
-      (self.bet_id,)
-    )
-    con.commit()
-
-    if cur.rowcount == 0:
-      bet = cur.execute('SELECT state FROM bet WHERE id = ?', (self.bet_id,)).fetchone()
-      if bet and bet[0] != 'active':
-        await interaction.response.edit_message(
-          content="cmon champ, that wager's long gone by now",
-          view=self
-        )
-      else:
-        await interaction.response.edit_message(
-          content='somethin went wrong there pardner',
-          view=self
-        )
-      return
-
-    await interaction.response.edit_message(
-      content='ah well',
-      view=self
-    )
-
-  @discord.ui.button(label='nevrmind', style=discord.ButtonStyle.grey)
-  async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-    self._disable_buttons()
-
-    await interaction.response.edit_message(
-      content='alright pardner, cancellation cancelled',
-      view=self
-    )
-
-  def _disable_buttons(self):
-    for item in self.children:
-        if isinstance(item, discord.ui.Button):
-            item.disabled = True
 
 
 @bot.command(
   help="bet's all done? well then, better let me know who won! show me ur ticket and ur winner, and i'll put it up on that thar leadrbord")
 @ignore_bots
-@is_registered(cur)
-async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str = ''):
-  # Note: We ignore the user parameter value and just fetch it straight from the mentions.
+@is_registered(con)
+async def resolve(ctx: Context, display_bet_id: int, winner_name: str, *, notes: str = ''):
+  # Note: We ignore the winner_name value and just fetch it straight from the mentions.
 
-  resolver = cur.execute(
-    'SELECT id FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
+  resolver = user.from_discord_user(ctx.author, con)
 
-  resolver_id = resolver[0]
   try:
     try:
       bet_id = parse_ticket_id(display_bet_id)
-    except ValueError:
-      raise BungoError("that don't look like a proper ticket numbr")
+    except ValueError as e:
+      raise BungoError("that don't look like a proper ticket numbr") from e
 
-    bet = cur.execute('SELECT participant1_id, participant2_id, description, state FROM bet WHERE id = ?',
-                      (bet_id,)).fetchone()
+    try:
+      bet: Bet = Bet.from_row(con.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone())
+    except ValueError as e:
+      raise BungoError("i ain't know nothin bout that ticket numbr") from e
 
-    if not bet:
-      raise BungoError("i ain't know nothin bout that ticket numbr")
-
-    participant1_id, participant2_id, description, state = bet
-
-    if state != 'active':
+    if not bet.is_active:
       raise BungoError("cmon champ, that wager's long gone by now")
 
-    if resolver_id not in (participant1_id, participant2_id):
+    if resolver.id not in (bet.participant1_id, bet.participant2_id):
       raise BungoError("slow down pardner, you ain't a part of that there wager")
 
     if not ctx.message.mentions:
       raise BungoError('u gotta @mention the winner!')
 
+    participant1, participant2 = bet.participants(con)
+    mentioned_user = user.from_discord_user(ctx.message.mentions[0], con)
+
+    if mentioned_user.id not in (participant1.id, participant2.id):
+      raise BungoError(f'they aint a pard of this, its between {participant1.display_name} and {participant2.display_name}')
+
     if len(notes) > 280:
       raise BungoError('keep them notes under 280 characters pardner')
-
-    mentioned_user_id = get_user_id(ctx.message.mentions[0], cur)
-
-    bet_outcome = await parse_winner_for_bet(mentioned_user_id, participant1_id, participant2_id, cur)
   except BungoError as e:
     print(f'Encountered Bungo error, returning message: {str(e)}')
     await ctx.channel.send(str(e))
@@ -388,19 +233,22 @@ async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str 
     await ctx.channel.send(f"i don know who {str(e)} is! have they said $howdy to ol' bungo?")
     return
 
+  winner, loser = find_winner(mentioned_user, participant1, participant2)
+
   view = ResolutionConfirmView(
+    con=con,
     bet_id=bet_id,
-    winner_id=bet_outcome.winner_id,
-    winner_name=bet_outcome.winner_name,
-    loser_name=bet_outcome.loser_name,
+    winner_id=winner.id,
+    winner_name=winner.display_name,
+    loser_name=loser.display_name,
     resolver_discord_id=str(ctx.author.id),
     resolution_notes=None if not notes else notes
   )
 
   confirmation_msg = (
-    f'wager: {description}\n'
-    f'between: {bet_outcome.winner_name} and {bet_outcome.loser_name}\n\n'
-    f'r ya sure {bet_outcome.winner_name} wins?'
+    f'wager: {bet.description}\n'
+    f'between: {winner.display_name} and {loser.display_name}\n\n'
+    f'r ya sure {winner.display_name} wins?'
   )
 
   await ctx.channel.send(confirmation_msg, view=view)
@@ -409,39 +257,32 @@ async def resolve(ctx: Context, display_bet_id: int, winner: str, *, notes: str 
 @bot.command(help="bet not work out? just let me know the ticket number and i'll take it offa my books",
              aliases=['rules'])
 @ignore_bots
-@is_registered(cur)
+@is_registered(con)
 async def cancel(ctx, display_bet_id: int):
-  canceller = cur.execute(
-    'SELECT id FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
-
-  canceller_id = canceller[0]
+  canceller: User = user.from_discord_user(ctx.author, con)
 
   try:
-    bet_id = parse_ticket_id(display_bet_id)
-  except ValueError:
-    await ctx.channel.send("that don't look like a proper ticket numbr")
-    return
+    try:
+      bet_id = parse_ticket_id(display_bet_id)
+    except ValueError: # TODO: Make this return a custom error so we don't have multiple try-catch blocks like this
+      raise BungoError("that don't look like a proper ticket numbr")
 
-  bet = cur.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone()
+    try:
+      bet = Bet.from_row(con.execute('SELECT * FROM bet WHERE id = ?', (bet_id,)).fetchone())
+    except ValueError as e:
+      raise BungoError("i ain't know nothin bout that ticket numbr") from e
 
-  if not bet:
-    await ctx.channel.send("i ain't know nothin bout that ticket numbr")
-    return
+    if not bet.is_active:
+      raise BungoError("cmon champ, that wager's long gone by now")
 
-  if bet[5] != 'active':
-    await ctx.channel.send("cmon champ, that wager's long gone by now")
-    return
-
-  participant1_id = bet[1]
-  participant2_id = bet[2]
-
-  if canceller_id not in (participant1_id, participant2_id):
-    await ctx.channel.send("slow down pardner, you ain't a part of that there wager")
+    if canceller.id not in (bet.participant1_id, bet.participant2_id):
+      raise BungoError("slow down pardner, you ain't a part of that there wager")
+  except BungoError as e:
+    await ctx.channel.send(str(e))
     return
 
   view = CancellationConfirmView(
+    con=con,
     bet_id=bet_id,
     canceller_discord_id=str(ctx.author.id)
   )
@@ -452,14 +293,9 @@ async def cancel(ctx, display_bet_id: int):
 @bot.command(
   help="forgot ur ticket number eh? that's okay, i got 'em all up here, just ask and i'll give ya the full list of active bets")
 @ignore_bots
-@is_registered(cur)
-async def tickets(ctx):
-  user = cur.execute(
-    'SELECT id, display_name FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
-
-  user_id = user[0]
+@is_registered(con)
+async def tickets(ctx: Context):
+  caller: User = user.from_discord_user(ctx.author, con)
 
   query = '''
           SELECT b.id,
@@ -475,20 +311,19 @@ async def tickets(ctx):
           ORDER BY b.created_at DESC \
           '''
 
-  tickets = cur.execute(query, (user_id, user_id)).fetchall()
+  tickets: list[Row] = con.execute(query, (caller.id, caller.id)).fetchall()
 
   if not tickets:
     await ctx.channel.send("u ain't got no active wagers right now pardner")
     return
 
-  lines = ['```', 'ur active tickets', '━━━━━━━━━━━━━━━━━━━━━━━']
+  lines: list[str] = ['```', 'ur active tickets', '━━━━━━━━━━━━━━━━━━━━━━━']
 
   for ticket_id, description, p1_name, p2_name, created_at in tickets:
     display_ticket_id = format_ticket_id(ticket_id)
-    created_date = created_at.split()[0] if created_at else ''
     lines.append(f'#{display_ticket_id}: {description}')
     lines.append(f'  between {p1_name} and {p2_name}')
-    lines.append(f'  created: {created_date}')
+    lines.append(f"  created: {created_at.strftime('%d-%m-%y')}")
     lines.append('')
 
   lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
@@ -499,25 +334,20 @@ async def tickets(ctx):
 
 @bot.command(help='check ur holdings - bungo dollars, bungo bux, and spins')
 @ignore_bots
-@is_registered(cur)
-async def wallet(ctx):
-  user = cur.execute(
-    'SELECT display_name, bungo_dollars, bungo_bux, spins FROM user WHERE discord_id = ?',
-    (str(ctx.author.id),)
-  ).fetchone()
+@is_registered(con)
+async def wallet(ctx: Context):
+  caller: User = user.from_discord_user(ctx.author, con)
 
-  display_name, bungo_dollars, bungo_bux, spins = user
+  lines: list[str] = ['```', f"{caller.display_name}'s wallet", '━━━━━━━━━━━━━━━━━━━━━━━']
 
-  lines = ['```', f"{display_name}'s wallet", '━━━━━━━━━━━━━━━━━━━━━━━']
-
-  if bungo_dollars >= 0:
-    dollars_str = f'${bungo_dollars}'
+  if caller.bungo_dollars >= 0:
+    dollars_str = f'${caller.bungo_dollars}'
   else:
-    dollars_str = f'-${abs(bungo_dollars)}'
+    dollars_str = f'-${abs(caller.bungo_dollars)}'
 
   lines.append(f'bungo dollars: {dollars_str}')
-  lines.append(f'bungo bux:     {bungo_bux}')
-  lines.append(f'spins:         {spins}')
+  lines.append(f'bungo bux:     {caller.bungo_bux}')
+  lines.append(f'spins:         {caller.spins}')
   lines.append('━━━━━━━━━━━━━━━━━━━━━━━')
   lines.append('```')
 
@@ -542,7 +372,7 @@ async def leadrbord(ctx):
           ORDER BY balance DESC, wins DESC LIMIT 10 \
           '''
 
-  results = cur.execute(query).fetchall()
+  results = con.execute(query).fetchall()
 
   if not results:
     await ctx.channel.send("ain't nobody played yet pardner")
@@ -573,9 +403,9 @@ async def leadrbord(ctx):
 
 @bot.command(help='see who owes whom in a fancy graph')
 @ignore_bots
-@is_registered(cur)
-async def debts(ctx):
-  debt_edges = calculate_global_debts(cur)
+@is_registered(con)
+async def debts(ctx: Context):
+  debt_edges = calculate_global_debts(con)
 
   if not debt_edges:
     await ctx.channel.send("ain't nobody got debts yet pardner")
@@ -600,5 +430,5 @@ if __name__ == '__main__':
   if bot_token is None:
     print('Discord API token not found')
     sys.exit(1)
-
-  bot.run(bot_token)
+  else:
+    bot.run(bot_token)
