@@ -36,6 +36,9 @@ multiline-quotes = 'single'
 [tool.ruff.format]
 quote-style = 'single'
 
+[tool.hatch.build.targets.wheel]
+packages = ['casino']
+
 [tool.pytest.ini_options]
 markers = [
   'integration: hits external services, run with -m integration',
