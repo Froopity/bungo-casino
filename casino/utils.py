@@ -1,9 +1,12 @@
+import logging
 from typing import Tuple
 from sqlite3 import Connection
 
 from discord.ext.commands.bot import Bot
 from casino.exceptions import BotNotAuthenticatedError
 from casino.model.user import User
+
+logger = logging.getLogger(__name__)
 
 def is_valid_name(text):
   allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%')
@@ -100,8 +103,10 @@ def generate_debt_graph_image(debt_edges):
   import urllib.request
 
   net_debts = calculate_net_debts(debt_edges)
+  logger.debug('debt_edges: %s', debt_edges)
+  logger.debug('net_debts: %s', net_debts)
 
-  theme_config = {
+  theme_config: dict[str, str | dict[str, str]] = {
     'theme': 'base',
     'themeVariables': {
       'primaryColor': '#D2B48C',
@@ -142,13 +147,24 @@ def generate_debt_graph_image(debt_edges):
     mermaid_lines.append(f'  {debtor_node}["{debtor}"] -->|${amount}| {creditor_node}["{creditor}"]')
 
   mermaid_code = '\n'.join(mermaid_lines)
+  logger.debug('mermaid_code:\n%s', mermaid_code)
   encoded = base64.urlsafe_b64encode(mermaid_code.encode('utf-8')).decode('utf-8')
   url = f'https://mermaid.ink/img/{encoded}?bgColor=faf0d2'
+  logger.debug('fetching graph from: %s', url)
 
   try:
+    req = urllib.request.Request(
+      url,
+      headers={'User-Agent': 'Mozilla/5.0 (compatible; casino-bot/1.0)'}
+    )
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-      urllib.request.urlretrieve(url, tmp.name)
-      return tmp.name
+      tmp_name = tmp.name
+    with urllib.request.urlopen(req) as response:
+      logger.debug('mermaid.ink response status: %s', response.status)
+      with open(tmp_name, 'wb') as f:
+        f.write(response.read())
+    logger.debug('graph image saved to: %s', tmp_name)
+    return tmp_name
   except Exception as e:
-    print(e)
+    logger.error('failed to fetch graph image: %s', e, exc_info=True)
     return None

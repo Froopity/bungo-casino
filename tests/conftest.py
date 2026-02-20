@@ -1,6 +1,5 @@
 import sys
 import sqlite3
-import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,7 +18,7 @@ def _load_migrations():
   parts = []
   for f in sql_files:
     text = f.read_text()
-    lines = [l for l in text.splitlines() if not l.startswith('-- ')]
+    lines = [line for line in text.splitlines() if not line.startswith('-- ')]
     parts.append('\n'.join(lines))
   _MIGRATION_SQL = '\n'.join(parts)
   return _MIGRATION_SQL
@@ -27,7 +26,7 @@ def _load_migrations():
 
 @pytest.fixture
 def mock_db():
-  con = sqlite3.connect(':memory:')
+  con = sqlite3.connect(':memory:', detect_types=sqlite3.PARSE_DECLTYPES)
   con.executescript(_load_migrations())
   cur = con.cursor()
 
