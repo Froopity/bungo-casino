@@ -1,6 +1,7 @@
 from casino.model.bet import Bet
 from sqlite3 import Cursor, Row
 from typing import Callable
+import logging
 import os
 import random
 import sqlite3
@@ -22,6 +23,8 @@ from casino.slots import spin_slots
 from casino.utils import get_bot_id, is_valid_name, format_ticket_id, parse_ticket_id, find_winner, name_is_bungo, calculate_global_debts, generate_debt_graph_image
 from casino.views.cancellation_confirm import CancellationConfirmView
 from casino.views.resolution_confirm import ResolutionConfirmView
+
+logger = logging.getLogger(__name__)
 
 random.seed()
 dotenv.load_dotenv()
@@ -405,13 +408,16 @@ async def leadrbord(ctx):
 @ignore_bots
 @is_registered(con)
 async def debts(ctx: Context):
+  logger.info('debts called by %s', ctx.author)
   debt_edges = calculate_global_debts(con)
+  logger.debug('debt_edges: %s', debt_edges)
 
   if not debt_edges:
     await ctx.channel.send("ain't nobody got debts yet pardner")
     return
 
   image_path = generate_debt_graph_image(debt_edges)
+  logger.debug('image_path: %s', image_path)
 
   if image_path is None:
     await ctx.channel.send('somethin went wrong generatin the graph pardner')
@@ -426,6 +432,10 @@ async def debts(ctx: Context):
 
 
 if __name__ == '__main__':
+  logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(name)s %(levelname)s %(message)s'
+  )
   bot_token = os.getenv('DISCORD_BOT_TOKEN')
   if bot_token is None:
     print('Discord API token not found')
