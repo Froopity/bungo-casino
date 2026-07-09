@@ -3,7 +3,8 @@ services:
     build: .
     container_name: bungo-casino
     restart: unless-stopped
-    env_file: /home/will/docker-data/bungo-casino/.env
+    env_file:
+      - .env
     volumes:
       # Persist the database
       - /home/will/docker-data/bungo-casino/data:/data
