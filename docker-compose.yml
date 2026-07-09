@@ -7,6 +7,6 @@ services:
       - .env
     volumes:
       # Persist the database
-      - ./data:/data
+      - /home/will/docker-data/bungo-casino/data:/data
     environment:
       - DATABASE_PATH=/data/casino.db
